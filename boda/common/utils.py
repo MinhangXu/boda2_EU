@@ -239,6 +239,20 @@ def parse_file(file_path, columns, sep=' '):
     sub_df = df[columns].dropna()
     return sub_df
 
+def UTR_row_pad_sequence(row, in_column_name, padded_seq_len=120,
+                     upStreamSeq='', downStreamSeq=''):
+    variable_seq = row[in_column_name]
+    full_seq = upStreamSeq + variable_seq + downStreamSeq
+    if len(full_seq) == padded_seq_len:
+        return full_seq
+    elif len(full_seq) < padded_seq_len:
+        # pad with 'N' or do whatever if you're shorter
+        missing = padded_seq_len - len(full_seq)
+        return full_seq + ('N' * missing)
+    else:
+        # if it's bigger, either truncate or raise an error
+        return full_seq[:padded_seq_len]
+
 def row_pad_sequence(row,
                      in_column_name='nt_sequence',
                      padded_seq_len=400,
@@ -377,7 +391,7 @@ def batch2fasta(batch, file_name):
                 sequence_str += constants.STANDARD_NT[idx]
             #seq_list.append(sequence_str)
             ofile.write(">" + seq_name + "\n" + sequence_str + "\n")
-            
+
 def reverse_complement_onehot(x, nt_order=constants.STANDARD_NT, 
                               complements=constants.DNA_COMPLEMENTS):
     """
