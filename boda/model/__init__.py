@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from .basset import Basset, BassetVL, BassetEntropyVL, BassetBranched
+from .basset import Basset, UTR_BassetVL, BassetVL, BassetEntropyVL, BassetBranched
 
 __all__ = [
-    'Basset', 'BassetVL', 'BassetEntropyVL', 'BassetBranched',
+    'Basset', 'UTR_BassetVL', 'BassetVL', 'BassetEntropyVL', 'BassetBranched',
 ]

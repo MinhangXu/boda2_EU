@@ -326,6 +326,216 @@ class Basset(ptl.LightningModule):
         output  = self.classify(decoded)
         return output
 
+class UTR_BassetVL(ptl.LightningModule):
+    """
+    A variant of 'Basset' that omits pooling and uses 'same' conv padding,
+    ideal for shorter sequences (e.g., 50-nt 5′ UTRs).
+
+    Architecture:
+      - 3 Conv1D layers, each 'same' padded => output length is unchanged
+      - Dropout + activation after each conv
+      - Flatten
+      - N fully-connected ("linear") layers, each with dropout + activation
+      - 1 final linear to produce `n_outputs` features
+      - MSELoss (or other) for regression tasks (e.g. mean ribosome load)
+    """
+
+    #####################
+    # CLI staticmethods #
+    #####################
+
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group  = parser.add_argument_group('Model Module args')
+
+        group.add_argument('--input_len', type=int, default=50,
+                           help="Length of input sequences (e.g. 50 for 5′UTR).")
+
+        group.add_argument('--conv1_channels', type=int, default=120)
+        group.add_argument('--conv1_kernel_size', type=int, default=8)
+
+        group.add_argument('--conv2_channels', type=int, default=120)
+        group.add_argument('--conv2_kernel_size', type=int, default=8)
+
+        group.add_argument('--conv3_channels', type=int, default=120)
+        group.add_argument('--conv3_kernel_size', type=int, default=8)
+
+        group.add_argument('--n_linear_layers', type=int, default=1)
+        group.add_argument('--linear_channels', type=int, default=40)
+        group.add_argument('--linear_activation', type=str, default='ReLU')
+        group.add_argument('--linear_dropout_p', type=float, default=0.2)
+
+        group.add_argument('--n_outputs', type=int, default=1,
+                           help="Number of outputs (1 for single-target regression).")
+
+        group.add_argument('--use_batch_norm', type=utils.str2bool, default=True)
+        group.add_argument('--use_weight_norm', type=utils.str2bool, default=False)
+
+        group.add_argument('--loss_criterion', type=str, default='MSELoss')
+        return parser
+
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        parser = add_criterion_specific_args(parser, known_args.loss_criterion)
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        model_args = grouped_args['Model Module args']
+        model_args.loss_args = vars(grouped_args['Criterion args'])
+        return model_args
+
+    #######################
+    # Model construction  #
+    #######################
+
+    def __init__(self,
+                 input_len=50,
+                 conv1_channels=120, conv1_kernel_size=8,
+                 conv2_channels=120, conv2_kernel_size=8,
+                 conv3_channels=120, conv3_kernel_size=8,
+                 n_linear_layers=1, linear_channels=40,
+                 linear_activation='ReLU',
+                 linear_dropout_p=0.2,
+                 n_outputs=1,
+                 use_batch_norm=True,
+                 use_weight_norm=False,
+                 loss_criterion='MSELoss',
+                 loss_args={}):
+        super().__init__()
+
+        # Store hyperparams
+        self.input_len         = input_len
+        self.conv1_channels    = conv1_channels
+        self.conv1_kernel_size = conv1_kernel_size
+        self.conv2_channels    = conv2_channels
+        self.conv2_kernel_size = conv2_kernel_size
+        self.conv3_channels    = conv3_channels
+        self.conv3_kernel_size = conv3_kernel_size
+
+        self.n_linear_layers   = n_linear_layers
+        self.linear_channels   = linear_channels
+        self.linear_activation = linear_activation
+        self.linear_dropout_p  = linear_dropout_p
+
+        self.n_outputs         = n_outputs
+        self.use_batch_norm    = use_batch_norm
+        self.use_weight_norm   = use_weight_norm
+
+        self.loss_criterion    = loss_criterion
+        self.loss_args         = loss_args
+
+        # "Same" convolution padding => out_len = in_len
+        pad1 = 'same'
+        pad2 = 'same'
+        pad3 = 'same'
+
+        self.conv1 = Conv1dNorm(
+            in_channels=4,
+            out_channels=self.conv1_channels,
+            kernel_size=self.conv1_kernel_size,
+            stride=1,
+            padding=pad1,
+            batch_norm=self.use_batch_norm,
+            weight_norm=self.use_weight_norm
+        )
+
+        self.conv2 = Conv1dNorm(
+            in_channels=self.conv1_channels,
+            out_channels=self.conv2_channels,
+            kernel_size=self.conv2_kernel_size,
+            stride=1,
+            padding=pad2,
+            batch_norm=self.use_batch_norm,
+            weight_norm=self.use_weight_norm
+        )
+
+        self.conv3 = Conv1dNorm(
+            in_channels=self.conv2_channels,
+            out_channels=self.conv3_channels,
+            kernel_size=self.conv3_kernel_size,
+            stride=1,
+            padding=pad3,
+            batch_norm=self.use_batch_norm,
+            weight_norm=self.use_weight_norm
+        )
+
+        # Nonlinearity & dropout
+        self.nonlin  = getattr(nn, self.linear_activation)()
+        self.dropout = nn.Dropout(p=self.linear_dropout_p)
+
+        # Flatten factor = conv3_channels * input_len
+        # (No pooling => the length never changes.)
+        self.flatten_dim = self.conv3_channels * self.input_len
+
+        # Build linear layers
+        in_features = self.flatten_dim
+        for i in range(self.n_linear_layers):
+            layer = LinearNorm(
+                in_features=in_features,
+                out_features=self.linear_channels,
+                batch_norm=self.use_batch_norm,
+                weight_norm=self.use_weight_norm
+            )
+            setattr(self, f'linear{i+1}', layer)
+            in_features = self.linear_channels
+
+        # Output layer
+        self.output = nn.Linear(in_features, self.n_outputs)
+
+        # Loss function
+        self.criterion = getattr(loss_functions, self.loss_criterion)(**self.loss_args)
+
+    ########################################
+    # Forward pass: encode -> decode -> out
+    ########################################
+
+    def encode(self, x):
+        """
+        Apply three conv layers (no pooling).
+        x shape: [batch, 4, seq_len]
+        """
+        # print("input:", x.shape)
+        x = self.conv1(x)
+        x = self.nonlin(x)
+        x = self.dropout(x)
+        # print("after conv1:", x.shape)
+        x = self.conv2(x)
+        x = self.nonlin(x)
+        x = self.dropout(x)
+        # print("after conv2:", x.shape)
+        x = self.conv3(x)
+        x = self.nonlin(x)
+        x = self.dropout(x)
+        # print("after conv3:", x.shape)
+        # Flatten => [batch, conv3_channels * seq_len]
+        x = x.reshape(x.shape[0], -1)
+        # print("after flatten:", x.shape)
+        return x
+
+    def decode(self, x):
+        """
+        Pass through one or more linear layers.
+        """
+        for i in range(self.n_linear_layers):
+            layer = getattr(self, f'linear{i+1}')
+            x = layer(x)
+            x = self.nonlin(x)
+            x = self.dropout(x)
+        return x
+
+    def classify(self, x):
+        """
+        Final linear layer => n_outputs
+        """
+        return self.output(x)
+
+    def forward(self, x):
+        encoded = self.encode(x)
+        decoded = self.decode(encoded)
+        return self.classify(decoded)
+    
 class BassetVL(ptl.LightningModule):
     """
     BassetVL (Variant of Basset with Variable Linear Layers) model architecture.
