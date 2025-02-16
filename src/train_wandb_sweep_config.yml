@@ -1,0 +1,150 @@
+program: train_wandb_log.py
+method: grid
+parameters:
+  # Data module parameters
+  data_module:
+    value: MPRA_DataModule
+  datafile_path:
+    value: "/home/minhang/synBio_AL/opt_EU_learn_n_design/CRE/MPRA_ALL_HD_v2.txt"
+  sep:
+    value: "space"
+  sequence_column:
+    value: "nt_sequence"
+  activity_columns:
+    value: "K562_mean HepG2_mean SKNSH_mean"
+  stderr_columns:
+    value: "lfcSE_k562 lfcSE_hepg2 lfcSE_sknsh"
+  synth_chr:
+    value: "synth"
+  synth_val_pct:
+    value: "10.0"
+  synth_test_pct:
+    value: "10.0"
+  synth_seed:
+    value: "0"
+  batch_size:
+    value: 1076
+  duplication_cutoff:
+    value: 0.5
+  std_multiple_cut:
+    value: 6.0
+  up_cutoff_move:
+    value: "3"
+  val_chrs:
+    value: "19 21 X"
+  test_chrs:
+    value: "7 13"
+  padded_seq_len:
+    value: "600"
+  use_reverse_complements:
+    value: "True"
+  num_workers:
+    value: "8"
+
+  # Model module parameters
+  model_module:
+    value: BassetBranched
+  input_len:
+    value: "600"
+  conv1_channels:
+    value: "300"
+  conv1_kernel_size:
+    value: "19"
+  conv2_channels:
+    value: "200"
+  conv2_kernel_size:
+    value: "11"
+  conv3_channels:
+    value: "200"
+  conv3_kernel_size:
+    value: "7"
+  n_linear_layers:
+    value: "1"
+  linear_channels:
+    value: "1000"
+  linear_activation:
+    value: "ReLU"
+  linear_dropout_p:
+    value: "0.11625456877954289"
+  n_branched_layers:
+    value: "3"
+  branched_channels:
+    value: "140"
+  n_outputs:
+    value: "3"
+  branched_activation:
+    value: "ReLU"
+  branched_dropout_p:
+    value: "0.5757068086404574"
+  loss_criterion:
+    value: "L1KLmixed"
+  beta:
+    value: "5"
+  use_batch_norm:
+    value: "True"
+  use_weight_norm:
+    value: "False"
+  reduction:
+    value: "mean"
+
+  # Graph module parameters
+  graph_module:
+    value: CNNTransferLearning
+  parent_weights:
+    value: "/home/minhang/synBio_AL/boda2_EU/src/my-model.epoch_5-step_19885.pkl"
+  frozen_epochs:
+    value: "0"
+  optimizer:
+    value: "Adam"
+  lr:
+    value: "0.00326587"
+  weight_decay:
+    value: "0.000343821"
+  amsgrad:
+    value: "True"
+  beta1:
+    value: "0.866106288"
+  beta2:
+    value: "0.879223105"
+  scheduler:
+    value: "CosineAnnealingWarmRestarts"
+  scheduler_interval:
+    value: "step"
+  T_0:
+    value: "4096"
+  T_mult:
+    value: "1"
+  eta_min:
+    value: "0.0"
+  last_epoch:
+    value: "-1"
+
+  # Trainer/Checkpoint parameters
+  checkpoint_monitor:
+    value: "entropy_spearman"
+  stopping_mode:
+    value: "max"
+  stopping_patience:
+    value: "50"
+  accelerator:
+    value: "gpu"
+  devices:
+    value: "1"
+  min_epochs:
+    value: "60"
+  max_epochs:
+    value: "300"
+  precision:
+    value: "16"
+  default_root_dir:
+    value: "/tmp/output/artifacts"
+  artifact_path:
+    value: "/home/minhang/synBio_AL/boda2_EU/src/local_artifacts"
+
+  # Logger parameters
+  logger:
+    value: "wandb"
+  logger_project:
+    value: "boda_train"
+  run_name:
+    value: "fixed_run"
