@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 import lightning.pytorch as pl
 from torch.utils.data import random_split, DataLoader, TensorDataset, ConcatDataset, Dataset
+from sklearn.preprocessing import StandardScaler
 
 from ..common import constants, utils
 
@@ -135,7 +136,7 @@ class MPRA_DataModule(pl.LightningDataModule):
         group.add_argument('--datafile_path', type=str, required=True, help="Path to MPRA data in txt format.")
         group.add_argument('--sep', type=str, choices={'space', 'tab', 'comma', " ", "\t", ","}, default="\t", help="Delimiter to parse data file.")
         group.add_argument('--project_column', type=str, default='data_project', help="Header to match column that can be used to filter data file.")
-        group.add_argument('--data_project', nargs='+', action=utils.ExtendAction, default=['UKBB','GTEX','CRE'], help="Values which indicate examples to keep from data file.")
+        group.add_argument('--data_project', nargs='+', action=utils.ExtendAction, default=['UKBB','GTEX','CRE', 'BODA'], help="Values which indicate examples to keep from data file.") # add BODA
         group.add_argument('--sequence_column', type=str, default='sequence', help="Header to match column containing nucleotide sequences.")
         group.add_argument('--activity_columns', type=str, nargs='+', default=['K562_log2FC', 'HepG2_log2FC', 'SKNSH_log2FC'], help="Header(s) to match columns containing features that will be modeled.")
         group.add_argument('--stderr_columns', type=str, nargs='+', default=['K562_lfcSE', 'HepG2_lfcSE', 'SKNSH_lfcSE'], help="Header(s) to match columns containing stderr of features that will be modeled.")
@@ -147,8 +148,8 @@ class MPRA_DataModule(pl.LightningDataModule):
         group.add_argument('--std_multiple_cut', type=float, default=6.0, help="Factor to multipy by standard deviation to define bounds for trusted measurements. Removes extreme outliers.")
         group.add_argument('--up_cutoff_move', type=float, default=3.0, help="Shift factor for upper bound of outlier filter.")
         group.add_argument('--synth_chr', type=str, default='synth', help="Value to identify non-mapped elements with no assigned chomosome.")
-        group.add_argument('--synth_val_pct', type=float, default=10.0, help="Percentage of non-mapped elements to reserve in validation set.")
-        group.add_argument('--synth_test_pct', type=float, default=10.0, help="Percentage of non-mapped elements to reserve in test set.")
+        group.add_argument('--synth_val_pct', type=float, default=0.0, help="Percentage of non-mapped elements to reserve in validation set.")
+        group.add_argument('--synth_test_pct', type=float, default=99.98, help="Percentage of non-mapped elements to reserve in test set.")
         group.add_argument('--synth_seed', type=int, default=0, help="Random seed to control splitting of non-mapped elements.")
         group.add_argument('--batch_size', type=int, default=32, 
                            help='Number of examples in each mini batch')         
@@ -179,7 +180,7 @@ class MPRA_DataModule(pl.LightningDataModule):
     def __init__(self,
                  datafile_path,
                  sep="\t",
-                 data_project=['UKBB', 'GTEX', 'CRE'],
+                 data_project=['UKBB', 'GTEX', 'CRE', 'BODA'],   # added BODA
                  project_column='data_project',
                  sequence_column='sequence',
                  activity_columns=['K562_log2FC', 'HepG2_log2FC', 'SKNSH_log2FC'],
@@ -306,6 +307,7 @@ class MPRA_DataModule(pl.LightningDataModule):
 
         print('Creating train/val/test datasets with tokenized sequences... \n')
         all_chrs = set(temp_df[self.chr_column])
+        print(f'self.synth_chr {self.synth_chr} and all_chrs {all_chrs}')
         self.train_chrs = all_chrs - self.val_chrs - self.test_chrs - self.synth_chr_as_set - self.exclude_chr_train
 
         if len(self.train_chrs) > 0:
@@ -344,6 +346,8 @@ class MPRA_DataModule(pl.LightningDataModule):
             self.chr_dataset_test = TensorDataset(sequences_test, activities_test)
              
         if self.synth_chr in all_chrs:
+            print(f'There are synthetic examples in the dataset with chromosome {self.synth_chr}.')
+            print(f'synth_val_pct = {self.synth_val_pct} and synth_test_pct = {self.synth_test_pct}')
             split_temp_df = temp_df.loc[temp_df[self.chr_column].isin(self.synth_chr_as_set)]
             list_tensor_seq = []
             for index, row in split_temp_df.iterrows():
@@ -408,6 +412,7 @@ class MPRA_DataModule(pl.LightningDataModule):
         excluded_pct = round(100 * excluded_size / self.num_examples, 2)
         print('-'*50)
         print('')
+        #print(f'Number of examples in synthetic train {synth_train_size}')
         print(f'Number of examples in train: {self.train_size} ({train_pct}%)')
         print(f'Number of examples in val:   {self.val_size} ({val_pct}%)')
         print(f'Number of examples in test:  {self.test_size} ({test_pct}%)')
@@ -477,3 +482,295 @@ class MPRA_DataModule(pl.LightningDataModule):
         """
         return DataLoader(self.chr_dataset_test, batch_size=self.batch_size,
                           shuffle=False, num_workers=self.num_workers)
+
+
+class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
+    """
+    A specialized DataModule for 5'UTR polysome data that do NOT have
+    'chr', 'project_column', or 'stderr_columns'. We override `setup()`
+    so we only parse [sequence_column, *activity_columns], optionally do outlier
+    filtering, then do random splits, duplication_cutoff, RC augmentation, etc.
+    """
+
+    @staticmethod
+    def add_data_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group  = parser.add_argument_group("UTR_Polysome DataModule")
+
+        group.add_argument('--datafile_path', type=str, required=True, help="Path to CSV with 'utr' and 'rl'.")
+        group.add_argument('--sep', type=str, choices={'space', 'tab', 'comma', " ", "\t", ","}, default="\t", help="Delimiter to parse data file.")
+        group.add_argument('--sequence_column', type=str, default='utr')
+        group.add_argument('--activity_columns', nargs='+', default=['rl'])
+        
+        # outlier filtering
+        group.add_argument('--std_multiple_cut', type=float, default=6.0)
+        group.add_argument('--up_cutoff_move', type=float, default=3.0)
+        
+        group.add_argument('--batch_size', type=int, default=32)
+        group.add_argument('--padded_seq_len', type=int, default=100)
+        group.add_argument('--num_workers', type=int, default=8)
+
+        # duplication_cutoff & reverse_complements
+        group.add_argument('--duplication_cutoff', type=float, default=None)
+        group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
+        
+        # fraction-based splits
+        group.add_argument('--val_split_frac', type=float, default=0.1,
+                           help="Fraction of data for validation.")
+        group.add_argument('--test_split_frac', type=float, default=0.1,
+                           help="Fraction of data for test.")
+        
+        # Seelig 2019-style split
+        group.add_argument("--author_style_split", type=bool, default=False,
+                           help="Replicate Seelig 2019 approach: sort by total_reads, slice top 280k, etc.")
+        group.add_argument("--use_standard_scaler", type=bool, default=False,
+                           help="Whether to standard-scale RL values (as in the paper).")
+        group.add_argument('--seed', type=int, default=0, help="random seed for splitting.")
+        
+        # optional means you can still pass the left_flank/right_flank if desired
+        group.add_argument('--left_flank', type=str, default='', help="Optional 5' constant region.")
+        group.add_argument('--right_flank', type=str, default='', help="Optional 3' constant region.")
+        
+        return parser
+    
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        # If you named your group "UTR_Polysome DataModule":
+        data_args = grouped_args["UTR_Polysome DataModule"]
+        data_args.sep = {'space':' ','tab':'\t','comma':',', ' ': ' ', '\t': '\t', ',': ','}[data_args.sep]
+        return data_args
+    
+    def __init__(self,
+                 datafile_path,
+                 sep=",",
+                 sequence_column='utr',
+                 activity_columns=['rl'],
+                 std_multiple_cut=6.0,
+                 up_cutoff_move=3.0,
+                 val_split_frac=0.1,
+                 test_split_frac=0.1,
+                 seed=0,
+                 duplication_cutoff=None,
+                 use_reverse_complements=False,
+                 padded_seq_len=100,
+                 left_flank='',
+                 right_flank='',
+                 batch_size=32,
+                 num_workers=8,
+                 author_style_split=False,
+                 use_standard_scaler=False,
+                 top_n=280000,
+                 test_n=20000,
+                 **kwargs):
+        # We call super().__init__() but we won't use its 'chr' logic, etc.
+        super(MPRA_DataModule, self).__init__()  # skip parent's MPRA_DataModule constructor
+
+        self.datafile_path = datafile_path
+        self.sep = sep
+        self.sequence_column = sequence_column
+        self.activity_columns = activity_columns
+        
+        self.std_multiple_cut = std_multiple_cut
+        self.up_cutoff_move = up_cutoff_move
+
+        self.val_split_frac = val_split_frac
+        self.test_split_frac= test_split_frac
+        self.seed = seed
+        
+        self.duplication_cutoff = duplication_cutoff
+        self.use_reverse_complements = use_reverse_complements
+        self.padded_seq_len = padded_seq_len
+        
+        self.left_flank = left_flank
+        self.right_flank= right_flank
+        
+        self.batch_size = batch_size
+        self.num_workers= num_workers
+        
+        self.padding_fn = partial(
+            utils.UTR_row_pad_sequence,
+            in_column_name=self.sequence_column,
+            padded_seq_len=self.padded_seq_len,
+            upStreamSeq=self.left_flank,
+            downStreamSeq=self.right_flank,
+        )
+
+        self.datafile_path = datafile_path
+        self.author_style_split = author_style_split
+        self.use_standard_scaler = use_standard_scaler
+        self.top_n = top_n
+        self.test_n = test_n
+
+        # placeholders for dataset splits
+        self.dataset_train = None
+        self.dataset_val   = None
+        self.dataset_test  = None
+
+        
+    def setup(self, stage=None):
+        """
+        Called by your trainer or main script once, to build train/val/test sets.
+        """
+        # Read the CSV
+        df = pd.read_csv(self.datafile_path, sep=self.sep, low_memory=False)
+
+        if self.author_style_split:
+            #
+            # ---------------------------
+            # (A) "Paper-style" approach
+            # ---------------------------
+            print("Author-style splitting enabled. Sorting by total_reads, slicing top_n, etc.")
+            if "total_reads" not in df.columns:
+                raise ValueError("author_style_split=True requires 'total_reads' column in the CSV.")
+
+            # Sort descending by total_reads
+            df.sort_values("total_reads", ascending=False, inplace=True)
+            df = df.iloc[:self.top_n].reset_index(drop=True)
+
+            # The first 'test_n' is test, remainder is train
+            # (No explicit val set in that snippet, but you can create one if desired.)
+            df_test  = df.iloc[:self.test_n].copy()
+            df_train = df.iloc[self.test_n:].copy()
+
+            # (Optional) standard-scaling of RL columns
+            # The snippet from the paper uses one column 'rl', but if you have multiple, loop them.
+            if self.use_standard_scaler:
+                print("Applying StandardScaler to 'RL' in train set, transform test set accordingly.")
+                scaler = StandardScaler()
+                for col in self.activity_columns:
+                    train_vals = df_train[col].values.reshape(-1,1)
+                    test_vals  = df_test[col].values.reshape(-1,1)
+
+                    df_train[col] = scaler.fit_transform(train_vals)
+                    df_test[col]  = scaler.transform(test_vals)
+            else:
+                print("Skipping StandardScaler, using raw RL values.")
+
+            # Convert train/test DataFrames to Datasets
+            self.dataset_train = self._df_to_dataset(df_train, do_outlier_filter=False)
+            self.dataset_val   = self._df_to_dataset(df_test, do_outlier_filter=False)  # or an empty dataset if you want
+            self.dataset_test  = self._df_to_dataset(df_test, do_outlier_filter=False)
+            self.df_test = df_test
+            
+            print(f"[Author-Style] Train size: {len(self.dataset_train)}  Test size: {len(self.dataset_test)}")
+
+        else:
+            #
+            # ----------------------------
+            # (B) Original random-split
+            # ----------------------------
+            print("Random-split approach. Using standard outlier filtering + random-split logic.")
+            needed_cols = [self.sequence_column] + self.activity_columns
+            df = df[needed_cols].dropna().reset_index(drop=True)
+
+            # Convert entire dataset
+            # (We do outlier filtering on everything, then random split)
+            full_dataset = self._df_to_dataset(df, do_outlier_filter=True)
+
+            total_len = len(full_dataset)
+            val_size  = int(total_len * self.val_split_frac)
+            test_size = int(total_len * self.test_split_frac)
+            train_size= total_len - val_size - test_size
+
+            # Shuffle once with a known seed
+            gen = torch.Generator().manual_seed(self.seed)
+            d_train, d_val, d_test = random_split(
+                full_dataset, [train_size, val_size, test_size], generator=gen
+            )
+            self.dataset_train = d_train
+            self.dataset_val   = d_val
+            self.dataset_test  = d_test
+
+            print("--------------------------------------------------")
+            print(f"Random-split: Train/Val/Test = {train_size}/{val_size}/{test_size}")
+            print("--------------------------------------------------")
+
+    
+    def _df_to_dataset(self, df, do_outlier_filter=True):
+        """
+        Helper function that:
+          1) Optionally does outlier filtering on activity columns.
+          2) Applies the padding function to each row, storing in 'padded_seq'.
+          3) Converts each 'padded_seq' to a [seq_len,4] one-hot tensor.
+          4) Stacks them into a single DNA tensor.
+          5) Builds a torch tensor for the RL (activity) columns.
+          6) Returns a DNAActivityDataset.
+        """
+        # 1) Optional outlier filtering
+        if do_outlier_filter and len(self.activity_columns) > 0:
+            arr = df[self.activity_columns].values  # shape [N, M]
+            means = arr.mean(axis=0)
+            stds  = arr.std(axis=0)
+
+            up_cut  = means + stds * self.std_multiple_cut + self.up_cutoff_move
+            down_cut= means - stds * self.std_multiple_cut
+            mask_up   = (arr < up_cut).all(axis=1)
+            mask_down = (arr > down_cut).all(axis=1)
+            keep_mask = mask_up & mask_down
+
+            before_len = len(df)
+            df = df.loc[keep_mask].reset_index(drop=True)
+            after_len  = len(df)
+            print(f"Outlier filter kept {after_len} / {before_len} examples.")
+        else:
+            print("Skipping outlier filtering (either disabled or no activity columns).")
+
+        # 2) Pad each sequence with left/right flanks
+        df['padded_seq'] = df.apply(self.padding_fn, axis=1)
+
+        # 3) Convert to one-hot
+        list_seq = []
+        for idx, row in df.iterrows():
+            seq_t = utils.row_dna2tensor(row, in_column_name='padded_seq')
+            list_seq.append(seq_t)
+        dna_tensor = torch.stack(list_seq, dim=0)  # shape [N, seq_len, 4]
+
+        # 4) Build an activity tensor
+        activity_values = df[self.activity_columns].values
+        if len(self.activity_columns) == 1:
+            activity_values = activity_values.reshape(-1,)
+        activity_tensor = torch.tensor(activity_values, dtype=torch.float32)
+
+        # 5) sort_tensor can be the max across columns if multi-dim
+        if activity_tensor.ndim > 1:
+            sortvals = torch.max(activity_tensor, dim=-1).values
+        else:
+            sortvals = activity_tensor
+
+        # 6) Construct final dataset
+        dataset = DNAActivityDataset(
+            dna_tensor,
+            activity_tensor,
+            sort_tensor=sortvals,
+            duplication_cutoff=self.duplication_cutoff,
+            use_reverse_complements=self.use_reverse_complements
+        )
+        return dataset
+    
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers
+        )
+    
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset_val,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+    
+    def test_dataloader(self):
+        return DataLoader(
+            self.dataset_test,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
