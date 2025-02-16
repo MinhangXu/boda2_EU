@@ -16,7 +16,7 @@ import hypertune
 
 from ..common import utils
 from .utils import (add_optimizer_specific_args, add_scheduler_specific_args, reorg_optimizer_args, reorg_scheduler_args,
-                    filter_state_dict, pearson_correlation, spearman_correlation, shannon_entropy)
+                    filter_state_dict, pearson_correlation, spearman_correlation, shannon_entropy, r2_score)
 
 class CNNBasicTraining(LightningModule):
     """
@@ -235,8 +235,36 @@ class CNNBasicTraining(LightningModule):
         """
         x, y   = batch
         y_hat = self(x)
+
+        # If y_hat is 2D and y is 1D, squeeze y_hat
+        if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
+            y_hat = y_hat.squeeze(1)
+
+        # Loss
         loss   = self.criterion(y_hat, y)
-        self.log('valid_loss', loss)
+        self.log('step_valid_loss', loss)
+
+        # R2 score
+        r2 = r2_score(y_hat, y)
+        self.log('step_valid_r2', r2)
+
+        # Pearson correlation
+        pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y) 
+        self.log('valid_mean_pearson', mean_pearsonr)
+
+        # per cell-type pearson correlation
+        n_outputs = getattr(self.model, 'n_outputs', 1)  # or store in hparams
+        if n_outputs == 3:
+            cell_types = ['K562', 'HepG2', 'SKNSH']
+            for i, coeff in enumerate(pearsonr_vals):
+                # If i >= len(cell_types), you'll get an index error
+                # so be sure you have exactly i elements in cell_types.
+                self.log(f'valid_pearson_{cell_types[i]}', coeff)
+                self.log(f'valid_pearson_squared_{cell_types[i]}', coeff**2)
+        else:
+            # Single output scenario
+            cell_types = ['SingleOutput']
+
         metric = self.categorical_mse(y_hat, y)
         return {'loss': loss, 'metric': metric, 'preds': y_hat, 'labels': y}
 
@@ -253,6 +281,10 @@ class CNNBasicTraining(LightningModule):
                       .mean(dim=0).pow(-1).mean().pow(-1)
         epoch_preds = torch.cat([batch['preds'] for batch in val_step_outputs], dim=0)
         epoch_labels  = torch.cat([batch['labels'] for batch in val_step_outputs], dim=0)
+
+        # Compute R² score
+        r2_val_score = r2_score(epoch_labels, epoch_preds)
+
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
         specificity_spearman, specificity_mean_spearman = spearman_correlation(shannon_pred, shannon_label)
@@ -261,7 +293,8 @@ class CNNBasicTraining(LightningModule):
             'arithmetic_mean_loss': arit_mean,
             'harmonic_mean_loss': harm_mean,
             'prediction_mean_spearman': mean_spearman.item(),
-            'entropy_spearman': specificity_mean_spearman.item()
+            'entropy_spearman': specificity_mean_spearman.item(), 
+            'epoch_end_r2': r2_val_score
         })
 
         return None
