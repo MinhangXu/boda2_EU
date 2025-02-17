@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 import re
@@ -8,6 +9,7 @@ import tarfile
 import tempfile
 import random
 import subprocess
+import ast
 
 import torch
 from lightning.pytorch import Trainer
@@ -78,6 +80,50 @@ def save_model(data_module, model_module, graph_module, model, trainer, args):
             os.makedirs(args['Main args'].artifact_path, exist_ok=True)
             shutil.copy(os.path.join(tmpdirname, filename), args['Main args'].artifact_path)
 
+#################################
+# Argument processing for lists #
+#################################
+
+def convert_to_list(param):
+    """
+    Convert a parameter into a list.
+    
+    If param is a list, iterate over its elements: if any element is a string
+    that starts with '[' and ends with ']', evaluate it with ast.literal_eval
+    and flatten the result. Otherwise, if param is a string, split it on whitespace,
+    or try to ast.literal_eval it if it appears to be a list.
+    """
+    if isinstance(param, list):
+        flattened = []
+        for item in param:
+            if isinstance(item, str):
+                item = item.strip()
+                if item.startswith('[') and item.endswith(']'):
+                    try:
+                        parsed = ast.literal_eval(item)
+                        if isinstance(parsed, list):
+                            flattened.extend(parsed)
+                        else:
+                            flattened.append(item)
+                    except Exception:
+                        flattened.append(item)
+                else:
+                    flattened.append(item)
+            else:
+                flattened.append(item)
+        return flattened
+    elif isinstance(param, str):
+        param = param.strip()
+        if param.startswith('[') and param.endswith(']'):
+            try:
+                return ast.literal_eval(param)
+            except Exception:
+                return param.split()
+        else:
+            return param.split()
+    else:
+        return param
+    
 #######################
 # Main and run blocks #
 #######################
@@ -94,14 +140,13 @@ def main(args):
     graph = graph_module(model=model, **vars(graph_module.process_args(args)))
 
     # Set up the logger based on command-line input.
-    # (When running a Wandb sweep, the sweep agent will override these via command-line.)
-    if args['Main args'].logger.lower() == 'wandb':
+    if args['Main args'].logger_type.lower() == 'wandb':
         logger = WandbLogger(
             project=args['Main args'].logger_project,
             name=args['Main args'].run_name,
             log_model=True
         )
-    elif args['Main args'].logger.lower() == 'tensorboard':
+    elif args['Main args'].logger_type.lower() == 'tensorboard':
         logger = pl_loggers.TensorBoardLogger(
             save_dir='./logs',
             name=args['Main args'].logger_project
@@ -125,9 +170,7 @@ def main(args):
             mode=args['Main args'].stopping_mode
         )
 
-    # Ensure output directory exists.
     os.makedirs('/tmp/output/artifacts', exist_ok=True)
-
     # Create the Trainer from its specific subset of arguments.
     trainer = Trainer.from_argparse_args(
         args['pl.Trainer'],
@@ -135,12 +178,9 @@ def main(args):
         logger=logger
     )
 
-    # Train the model.
     trainer.fit(graph, data)
-    # Load the best model state.
     graph = set_best(graph, use_callbacks)
 
-    # Report hypertuning metric if available.
     try:
         mc_dict = vars(use_callbacks['model_checkpoint'])
         keys = ['monitor', 'best_model_score']
@@ -155,7 +195,6 @@ def main(args):
     except AttributeError:
         print("No hypertune instance found.", file=sys.stderr)
 
-    # Save the model and artifacts.
     save_model(data_module, model_module, graph_module, graph.model, trainer, args)
 
 if __name__ == '__main__':
@@ -180,15 +219,15 @@ if __name__ == '__main__':
     group.add_argument('--tolerate_unknown_args', type=utils.str2bool, default=False,
                        help='Skips unknown command line args without exceptions. Useful for HPO, but high risk of silent errors.')
 
-    # New logger control arguments.
-    group.add_argument('--logger', type=str, default='wandb',
+    # New logger control arguments (renamed to avoid conflict with Trainer's logger)
+    group.add_argument('--logger_type', type=str, default='wandb',
                        help='Which logger to use (wandb, tensorboard, none)')
     group.add_argument('--logger_project', type=str, default='boda_train',
                        help='Project name for the logger.')
     group.add_argument('--run_name', type=str, default='default_run',
                        help='Run name for the logger.')
 
-    # Note: All hyperparameters for the model (such as learning_rate) are added via the module-specific functions.
+    # (Module-specific hyperparameters are added by the module-specific functions.)
     
     # Retrieve the module classes based on initial known arguments.
     known_args, leftover_args = parser.parse_known_args()
@@ -201,7 +240,6 @@ if __name__ == '__main__':
     parser = Model.add_model_specific_args(parser)
     parser = Graph.add_graph_specific_args(parser)
     
-    # Parse known arguments again.
     known_args, leftover_args = parser.parse_known_args()
     
     # Add conditional arguments based on the known arguments.
@@ -213,7 +251,6 @@ if __name__ == '__main__':
     parser = Trainer.add_argparse_args(parser)
     parser.add_argument('--help', '-h', action='help')
     
-    # Final parse.
     if known_args.tolerate_unknown_args:
         args, leftover_args = parser.parse_known_args()
         print("Skipping unexpected args. Check leftovers for typos:", file=sys.stderr)
@@ -221,18 +258,25 @@ if __name__ == '__main__':
     else:
         args = parser.parse_args()
     
-    # Organize arguments into groups (e.g., 'pl.Trainer') using your utility function.
+    # Organize arguments into groups (e.g., 'pl.Trainer') using your utility.
     args = utils.organize_args(parser, args)
     
-    # (Optional) If running under a Wandb sweep, wandb.config may override some arguments.
-    if hasattr(wandb, 'config'):
-        # For each key in wandb.config, update the main args namespace.
-        for key, value in wandb.config.items():
-            # This assumes the parameter names match those in your parser.
-            setattr(args, key, value)
+    print('-' * 80)
+    print("Organized arguments: \n")
+    # (Optional) inspect the organized groups:
+    for group_title, namespace_obj in args.items():
+        print(group_title, vars(namespace_obj))
+        print("")
+    print('-' * 80)
     
-    main(args)
+    # Since "activity_columns", "stderr_columns", "val_chrs", and "test_chrs" are in "Data Module args":
+    data_args = args["Data Module args"]
+    data_args.activity_columns = convert_to_list(data_args.activity_columns)
+    data_args.stderr_columns   = convert_to_list(data_args.stderr_columns)
+    data_args.val_chrs         = convert_to_list(data_args.val_chrs)
+    data_args.test_chrs        = convert_to_list(data_args.test_chrs)
+    print('')
 
-    # Finish the Wandb run if it exists.
+    main(args)
     if wandb.run is not None:
         wandb.finish()
