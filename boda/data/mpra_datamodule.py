@@ -501,6 +501,7 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
         group.add_argument('--sep', type=str, choices={'space', 'tab', 'comma', " ", "\t", ","}, default="\t", help="Delimiter to parse data file.")
         group.add_argument('--sequence_column', type=str, default='utr')
         group.add_argument('--activity_columns', nargs='+', default=['rl'])
+        group.add_argument('--total_reads_column', type=str, default='total_reads')
         
         # outlier filtering
         group.add_argument('--std_multiple_cut', type=float, default=6.0)
@@ -526,6 +527,8 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
         group.add_argument("--use_standard_scaler", type=bool, default=False,
                            help="Whether to standard-scale RL values (as in the paper).")
         group.add_argument('--seed', type=int, default=0, help="random seed for splitting.")
+        group.add_argument('--top_n', type=int, default=280000, help="Number of examples to keep for training.")
+        group.add_argument('--test_n', type=int, default=20000, help="Number of examples to keep for testing.")
         
         # optional means you can still pass the left_flank/right_flank if desired
         group.add_argument('--left_flank', type=str, default='', help="Optional 5' constant region.")
@@ -549,6 +552,7 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
                  sep=",",
                  sequence_column='utr',
                  activity_columns=['rl'],
+                 total_reads_column='total_reads',
                  std_multiple_cut=6.0,
                  up_cutoff_move=3.0,
                  val_split_frac=0.1,
@@ -573,6 +577,7 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
         self.sep = sep
         self.sequence_column = sequence_column
         self.activity_columns = activity_columns
+        self.total_reads_column = total_reads_column
         
         self.std_multiple_cut = std_multiple_cut
         self.up_cutoff_move = up_cutoff_move
@@ -624,11 +629,11 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
             # (A) "Paper-style" approach
             # ---------------------------
             print("Author-style splitting enabled. Sorting by total_reads, slicing top_n, etc.")
-            if "total_reads" not in df.columns:
+            if self.total_reads_column not in df.columns:
                 raise ValueError("author_style_split=True requires 'total_reads' column in the CSV.")
 
             # Sort descending by total_reads
-            df.sort_values("total_reads", ascending=False, inplace=True)
+            df.sort_values(self.total_reads_column, ascending=False, inplace=True)
             df = df.iloc[:self.top_n].reset_index(drop=True)
 
             # The first 'test_n' is test, remainder is train
