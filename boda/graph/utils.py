@@ -2,6 +2,7 @@ import sys
 import argparse
 import inspect
 import torch
+import numpy as np
 
 from torch import nn
 
@@ -273,8 +274,18 @@ def shannon_entropy(x):
     Returns:
         torch.Tensor: Shannon entropy values.
     """
+    # If x is 1D, unsqueeze it so that it becomes [B, 1]
+    if x.dim() == 1:
+        x = x.unsqueeze(1)
     p_c = nn.Softmax(dim=1)(x)    
     return torch.sum(- p_c * torch.log(p_c), axis=1)
+
+
+def r2_score(y_true, y_pred):
+    y_true = y_true.cpu().detach().numpy()
+    y_pred = y_pred.cpu().detach().numpy()
+    corr_matrix = np.corrcoef(y_true.flatten(), y_pred.flatten())
+    return corr_matrix[0, 1] ** 2
 
 def _get_ranks(x):
     """
