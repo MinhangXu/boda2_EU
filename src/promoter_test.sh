@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# eGFP unmod_1 -> GPU:0
+CUDA_VISIBLE_DEVICES=0 python previous_train.py \
+  --data_module=PromoterDataModule \
+  --datafile_path=/home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_df.csv \
+  --batch_size=256 \
+  --seed=42 \
+  --model_module=UTR_BassetVL \
+  --input_len=84 \
+  --conv1_channels=120 \
+  --conv1_kernel_size=8 \
+  --conv2_channels=120 \
+  --conv2_kernel_size=8 \
+  --conv3_channels=120 \
+  --conv3_kernel_size=8 \
+  --n_linear_layers=1 \
+  --linear_channels=40 \
+  --linear_activation=ReLU \
+  --linear_dropout_p=0.2 \
+  --n_outputs=1 \
+  --use_batch_norm=True \
+  --use_weight_norm=False \
+  --loss_criterion=MSELoss \
+  --graph_module=CNNBasicTraining \
+  --optimizer=Adam \
+  --lr=0.0033 \
+  --weight_decay=0.000343 \
+  --amsgrad=True \
+  --checkpoint_monitor=epoch_end_r2 \
+  --stopping_mode=max \
+  --stopping_patience=20 \
+  --accelerator=gpu \
+  --devices=1 \
+  --min_epochs=30 \
+  --max_epochs=300 \
+  --precision=16 \
+  --default_root_dir=/tmp/output/artifacts \
+  --artifact_path=/home/minhang/synBio_AL/boda2/src/local_artifacts/promoter/run1/ \
+  --tolerate_unknown_args=False
