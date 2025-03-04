@@ -288,6 +288,7 @@ class CNNBasicTraining(LightningModule):
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
         specificity_spearman, specificity_mean_spearman = spearman_correlation(shannon_pred, shannon_label)
+        '''
         self.aug_log(external_metrics={
             'current_epoch': self.current_epoch, 
             'arithmetic_mean_loss': arit_mean,
@@ -296,6 +297,17 @@ class CNNBasicTraining(LightningModule):
             'entropy_spearman': specificity_mean_spearman.item(), 
             'epoch_end_r2': r2_val_score
         })
+        '''
+        # Log with epoch as x-axis
+        on_epoch = True  # This ensures metrics are logged per epoch
+        self.log('epoch_end_r2', r2_val_score, on_epoch=on_epoch)
+        self.log('arithmetic_mean_loss', arit_mean, on_epoch=on_epoch)
+        self.log('harmonic_mean_loss', harm_mean, on_epoch=on_epoch) 
+        self.log('prediction_mean_spearman', mean_spearman.item(), on_epoch=on_epoch)
+        self.log('entropy_spearman', specificity_mean_spearman.item(), on_epoch=on_epoch)
+        
+        # You can also explicitly log the epoch
+        self.log('current_epoch', self.current_epoch, on_epoch=True)
 
         return None
     
