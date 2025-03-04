@@ -31,7 +31,7 @@ parameters:
     value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_df.csv
   batch_size:
     distribution: categorical
-    values: [128, 256, 512]
+    values: [256, 512, 1024]
   seed:
     value: 42
   num_workers:
@@ -44,32 +44,32 @@ parameters:
     value: 84
   conv1_channels:
     distribution: int_uniform
-    min: 80
-    max: 160
+    min: 120
+    max: 200
   conv1_kernel_size:
     distribution: categorical
     values: [5, 7, 9, 12, 17]
   conv2_channels:
     distribution: int_uniform
-    min: 80
-    max: 160
+    min: 120
+    max: 200
   conv2_kernel_size:
     distribution: categorical
     values: [5, 7, 9, 12, 15]
   conv3_channels:
     distribution: int_uniform
-    min: 80
-    max: 160
+    min: 120
+    max: 200
   conv3_kernel_size:
     distribution: categorical
     values: [3, 5, 7, 8, 9]
   n_linear_layers:
     distribution: categorical
-    values: [1, 2]
+    values: [1, 2, 3]
   linear_channels:
     distribution: int_uniform
-    min: 100
-    max: 700
+    min: 800
+    max: 1200
   linear_activation:
     distribution: categorical
     values: [ReLU, LeakyReLU]
@@ -100,11 +100,11 @@ parameters:
   lr:
     distribution: log_uniform_values
     min: 0.0001
-    max: 0.01
+    max: 0.003
   weight_decay:
     distribution: log_uniform_values
-    min: 0.00001
-    max: 0.001
+    min: 0.00005
+    max: 0.0001
   amsgrad:
     value: True
   beta1:
