@@ -1,0 +1,140 @@
+program: train_wandb_log.py 
+method: bayes
+metric:
+  name: epoch_end_r2
+  goal: maximize
+parameters:
+  # Main arguments
+  data_module:
+    value: PromoterDataModule
+  model_module:
+    value: UTR_BassetVL
+  graph_module:
+    value: CNNBasicTraining
+  checkpoint_monitor:
+    value: epoch_end_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 20
+  logger_type:
+    value: wandb
+  logger_project:
+    value: promoter_optimization
+  run_name:
+    value: "promoter_test_{runid}"
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2/src/local_artifacts/promoter/sweep/
+  
+  # Data module parameters
+  datafile_path:
+    value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_df.csv
+  batch_size:
+    distribution: categorical
+    values: [128, 256, 512]
+  seed:
+    value: 42
+  num_workers:
+    value: 8
+  padded_seq_len:
+    value: 84
+  
+  # Model module parameters
+  input_len:
+    value: 84
+  conv1_channels:
+    distribution: int_uniform
+    min: 80
+    max: 160
+  conv1_kernel_size:
+    distribution: categorical
+    values: [5, 7, 9, 12, 17]
+  conv2_channels:
+    distribution: int_uniform
+    min: 80
+    max: 160
+  conv2_kernel_size:
+    distribution: categorical
+    values: [5, 7, 9, 12, 15]
+  conv3_channels:
+    distribution: int_uniform
+    min: 80
+    max: 160
+  conv3_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7, 8, 9]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]
+  linear_channels:
+    distribution: int_uniform
+    min: 100
+    max: 700
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.0
+    max: 0.5
+  n_outputs:
+    value: 1
+  use_batch_norm:
+    distribution: categorical
+    values: [True, False]
+  use_weight_norm:
+    value: False
+  loss_criterion:
+    distribution: categorical
+    values: [MSELoss, L1KLmixed, MSEKLmixed]
+  reduction:
+    value: mean
+  
+  # For L1KLmixed and MSEKLmixed
+  beta:
+    value: 5.0
+  
+  # Graph module parameters
+  optimizer:
+    value: Adam
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.01
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  amsgrad:
+    value: True
+  beta1:
+    value: 0.9
+  beta2:
+    value: 0.999
+    
+  # Scheduler parameters - unified approach
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  T_0:
+    value: 4096
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+  scheduler_interval:
+    value: step
+    
+  # Lightning Trainer parameters
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  min_epochs:
+    value: 30
+  max_epochs:
+    value: 300
+  precision:
+    value: 16
+  default_root_dir:
+    value: /tmp/output/artifacts
