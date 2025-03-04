@@ -783,30 +783,32 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
 
 # Define a dataset that converts sequences to one-hot encoded tensors.
 class PromoterDataset(Dataset):
-    def __init__(self, df, sequence_column='padded_seq', transform=None):
+    def __init__(self, df, sequence_column='padded_seq', target_column='expression'):
         """
-        df: DataFrame with columns ['padded_seq', 'expression', 'set']
-        transform: a function to convert a sequence (string) to a Tensor.
+        df: DataFrame with at least [sequence_column] and [target_column]
+        sequence_column: Column containing the (padded) sequence
+        target_column: Column containing the expression values
         """
         self.df = df
         self.sequence_column = sequence_column
-        self.transform = transform
+        self.target_column = target_column
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        # Get the one-hot encoded tensor; row_dna2tensor already returns shape [4, L].
+        # Get the one-hot encoded tensor
         seq_tensor = utils.row_dna2tensor(row, in_column_name=self.sequence_column)
-        # Do NOT transpose here.
-        expression = torch.tensor(row['expression'], dtype=torch.float32)
+        # Get the standardized expression value
+        expression = torch.tensor(row[self.target_column], dtype=torch.float32)
         return seq_tensor, expression
 
 class PromoterDataModule(pl.LightningDataModule):
     def __init__(self,
                  datafile_path,
                  batch_size=32,
+                 sequence_column='sequence',
                  num_workers=0,
                  seed=42,
                  padded_seq_len=80):
@@ -818,6 +820,7 @@ class PromoterDataModule(pl.LightningDataModule):
         self.datafile_path = datafile_path
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.sequence_column = sequence_column
         self.seed = seed
         self.padded_seq_len = padded_seq_len
 
@@ -825,12 +828,12 @@ class PromoterDataModule(pl.LightningDataModule):
         self.dataset_val = None
 
         # Create a padding function similar to UTR modules.
-        self.padding_fn = partial(utils.row_pad_sequence,
-                                   in_column_name='sequence',
+        self.padding_fn = partial(utils.UTR_row_pad_sequence,
+                                   in_column_name=self.sequence_column,
                                    padded_seq_len=self.padded_seq_len,
                                    upStreamSeq="",
                                    downStreamSeq="")
-
+        
     @staticmethod
     def add_data_specific_args(parent_parser):
         parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
@@ -861,15 +864,47 @@ class PromoterDataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         # Read the CSV
         df = pd.read_csv(self.datafile_path)
-        # Apply the padding function to each row to create a 'padded_seq' column.
+        
+        # Apply the appropriate padding function
         df['padded_seq'] = df.apply(self.padding_fn, axis=1)
-        # Split the data by the 'set' column (which should have values 'train' and 'val').
+        
+        # Standardize expression values - global standardization
+        # Store parameters to support inference later
+        self.expression_mean = df['expression'].mean()
+        self.expression_std = df['expression'].std()
+        df['expression_standardized'] = (df['expression'] - self.expression_mean) / self.expression_std
+        
+        # Alternative: standardize within each complexity group
+        # This might be better if the distributions differ significantly
+        complexity_groups = df.groupby('complexity')
+        self.complexity_stats = {}
+        
+        for complexity, group in complexity_groups:
+            mean = group['expression'].mean()
+            std = group['expression'].std()
+            self.complexity_stats[complexity] = {'mean': mean, 'std': std}
+            
+            # Create standardized column names specific to each complexity
+            df.loc[df['complexity'] == complexity, f'expression_std_{complexity}'] = (
+                (df.loc[df['complexity'] == complexity, 'expression'] - mean) / std
+            )
+        
+        # Split by the 'set' column
         df_train = df[df['set'] == 'train'].reset_index(drop=True)
         df_val = df[df['set'] == 'val'].reset_index(drop=True)
-        self.dataset_train = PromoterDataset(df_train, sequence_column='padded_seq', transform=utils.row_dna2tensor)
-        self.dataset_val = PromoterDataset(df_val, sequence_column='padded_seq', transform=utils.row_dna2tensor)
-        print(f"Train dataset size: {len(self.dataset_train)}")
-        print(f"Validation dataset size: {len(self.dataset_val)}")
+        
+        # Create your datasets using standardized values
+        self.dataset_train = PromoterDataset(
+            df_train, 
+            sequence_column='padded_seq',
+            target_column='expression_standardized'  # Use the standardized values
+        )
+        
+        self.dataset_val = PromoterDataset(
+            df_val, 
+            sequence_column='padded_seq',
+            target_column='expression_standardized'  # Use the standardized values
+        )
 
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
