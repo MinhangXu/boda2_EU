@@ -85,13 +85,13 @@ parameters:
   use_weight_norm:
     value: False
   loss_criterion:
-    values: MSELoss
+    value: "MSELoss"
   reduction:
     value: mean
   
   # For L1KLmixed and MSEKLmixed
-  beta:
-    value: 5.0
+  # beta:
+    # value: 5.0
   
   # Graph module parameters
   optimizer:
