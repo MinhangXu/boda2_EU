@@ -1,22 +1,29 @@
 #!/bin/bash
 
-# Number of agents to run (e.g., one per GPU)
-num_agents=8  # Modify based on available GPUs
-sweep_id='your-sweep-id-here'  # Replace with your actual sweep ID from Wandb
+# Configuration
+SWEEP_ID=minhangxu1998-baylor-college-of-medicine/boda2_EU-src/8tr3pavm
+NUM_AGENTS=8     # Start with 1 for initial testing
+NUM_RUNS=3       # Start with 1 for initial testing
+GPU_LIST=(0 1 2 3 4 5 6 7)     # Start with just GPU 0
 
-# Number of runs (trials) each agent should execute
-num_runs=8
+# Create output directories
+mkdir -p /home/minhang/synBio_AL/boda2/src/local_artifacts/promoter/sweep/
 
-# Loop over each agent and assign a GPU.
-for ((i=0; i<num_agents; i++)); do
-  gpu_id=$(( i % $(nvidia-smi --list-gpus | wc -l) ))
-  echo "Launching agent $i on GPU $gpu_id"
+# Run the agents
+for ((i=0; i<NUM_AGENTS; i++)); do
+  # Assign GPU from the list (cycling if needed)
+  GPU_ID=${GPU_LIST[i % ${#GPU_LIST[@]}]}
   
-  # Launch the agent with the appropriate GPU.
-  CUDA_VISIBLE_DEVICES=$gpu_id wandb agent --count $num_runs $sweep_id &
+  echo "Starting agent $i on GPU $GPU_ID to run $NUM_RUNS trials"
+  CUDA_VISIBLE_DEVICES=$GPU_ID wandb agent --count $NUM_RUNS $SWEEP_ID &
   
-  sleep 1  # Optional delay between launching agents
+  # Small delay between launching agents
+  sleep 2
 done
 
+echo "All agents launched."
+echo "Press Ctrl+C to stop all agents"
+
+# Wait for all background processes
 wait
-echo "All agents finished."
+echo "All agents completed"
