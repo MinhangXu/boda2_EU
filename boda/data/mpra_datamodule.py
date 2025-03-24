@@ -800,8 +800,8 @@ class PromoterDataset(Dataset):
         row = self.df.iloc[idx]
         # Get the one-hot encoded tensor
         seq_tensor = utils.row_dna2tensor(row, in_column_name=self.sequence_column)
-        # Get the standardized expression value
-        expression = torch.tensor(row[self.target_column], dtype=torch.float32)
+        # Get the standardized expression value and reshape to [1]
+        expression = torch.tensor(row[self.target_column], dtype=torch.float32).view(-1)
         return seq_tensor, expression
 
 class PromoterDataModule(pl.LightningDataModule):
@@ -872,6 +872,8 @@ class PromoterDataModule(pl.LightningDataModule):
         # Store parameters to support inference later
         self.expression_mean = df['expression'].mean()
         self.expression_std = df['expression'].std()
+        if self.expression_std < 1e-8:  # Avoid division by very small numbers:
+            self.expression_std = 1
         df['expression_standardized'] = (df['expression'] - self.expression_mean) / self.expression_std
         
         # Alternative: standardize within each complexity group
