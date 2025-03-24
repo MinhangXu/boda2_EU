@@ -206,28 +206,34 @@ def main(args):
 
     # Set up logger based on command-line input
     if args['Main args'].logger_type.lower() == 'wandb':
-        # Generate a unique run ID and process the run name
-        run_id = wandb.util.generate_id()
-        run_name = args['Main args'].run_name.replace("{runid}", run_id)
-        
-        logger = WandbLogger(
-            project=args['Main args'].logger_project,
-            name=run_name,  # Now using the processed run_name
-            log_model=True
-        )
-        
-        # Log all hyperparameters to W&B
-        logger.log_hyperparams(vars(args['Main args']))
-        if 'Model Module args' in args:
-            logger.log_hyperparams(vars(args['Model Module args']))
-        if 'Data Module args' in args or args['Main args'].data_module == 'PromoterDataModule':
-            module_name = 'Data Module args'
-            if args['Main args'].data_module == 'PromoterDataModule':
-                module_name = 'Promoter DataModule'
-            if module_name in args:
-                logger.log_hyperparams(vars(args[module_name]))
-        if 'Graph Module args' in args:
-            logger.log_hyperparams(vars(args['Graph Module args']))
+        try:
+            # Generate a unique run ID and process the run name
+            run_id = wandb.util.generate_id()
+            if "{runid}" in args['Main args'].run_name:
+                run_name = args['Main args'].run_name.replace("{runid}", run_id)
+            else:
+                run_name = f"{args['Main args'].run_name}_{run_id}"
+            
+            logger = WandbLogger(
+                project=args['Main args'].logger_project,
+                name=run_name,
+                log_model=True
+            )
+            
+            # Log more comprehensive hyperparameters
+            all_hparams = {}
+            for group_name, group_args in args.items():
+                if isinstance(group_args, argparse.Namespace):
+                    group_dict = {f"{group_name}.{k}": v for k, v in vars(group_args).items()}
+                    all_hparams.update(group_dict)
+            
+            logger.log_hyperparams(all_hparams)
+            
+            print(f"Initialized Wandb logging with run ID: {run_id}, name: {run_name}")
+        except Exception as e:
+            print(f"Wandb initialization failed: {str(e)}")
+            print("Falling back to default logger")
+            logger = True
     elif args['Main args'].logger_type.lower() == 'tensorboard':
         logger = pl_loggers.TensorBoardLogger(
             save_dir='./logs',
