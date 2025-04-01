@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Configuration
-SWEEP_ID=minhangxu1998-baylor-college-of-medicine/boda2_EU-src/8tr3pavm
+SWEEP_ID=minhangxu1998-baylor-college-of-medicine/boda2_EU-src/k95n3gl0
 NUM_AGENTS=8     # Start with 1 for initial testing
-NUM_RUNS=3       # Start with 1 for initial testing
+NUM_RUNS=6       # Start with 1 for initial testing
 GPU_LIST=(0 1 2 3 4 5 6 7)     # Start with just GPU 0
 
 # Create output directories
-mkdir -p /home/minhang/synBio_AL/boda2/src/local_artifacts/promoter/sweep/
+#mkdir -p /home/minhang/synBio_AL/boda2/src/local_artifacts/promoter/sweep/
 
 # Run the agents
 for ((i=0; i<NUM_AGENTS; i++)); do
