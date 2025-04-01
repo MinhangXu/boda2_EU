@@ -854,6 +854,8 @@ class PromoterDataModule(pl.LightningDataModule):
                            help="Random seed for reproducibility.")
         group.add_argument('--padded_seq_len', type=int, default=80,
                            help="Desired sequence length after padding (e.g. 80).")
+        group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False,
+                       help="Whether to use reverse complements for data augmentation")
         return parser
 
     @staticmethod
