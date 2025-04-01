@@ -811,10 +811,15 @@ class PromoterDataModule(pl.LightningDataModule):
                  sequence_column='sequence',
                  num_workers=0,
                  seed=42,
-                 padded_seq_len=80):
+                 padded_seq_len=80,
+                 use_reverse_complements=False):
         """
         Stores the file path and hyperparameters.
         The CSV is read in setup().
+        
+        Args:
+            use_reverse_complements: If True, use the dataset with RCs included.
+                                    If False, filter out the RC sequences.
         """
         super().__init__()
         self.datafile_path = datafile_path
@@ -823,6 +828,7 @@ class PromoterDataModule(pl.LightningDataModule):
         self.sequence_column = sequence_column
         self.seed = seed
         self.padded_seq_len = padded_seq_len
+        self.use_reverse_complements = use_reverse_complements
 
         self.dataset_train = None
         self.dataset_val = None
@@ -865,11 +871,17 @@ class PromoterDataModule(pl.LightningDataModule):
         # Read the CSV
         df = pd.read_csv(self.datafile_path)
         
+        # Filter out RC sequences if not using them
+        if not self.use_reverse_complements and 'RC_bool' in df.columns:
+            df = df[df['RC_bool'] == False].reset_index(drop=True)
+            print(f"Filtered out RC sequences. Using {len(df)} original sequences only.")
+        elif self.use_reverse_complements and 'RC_bool' in df.columns:
+            print(f"Using all {len(df)} sequences including reverse complements.")
+        
         # Apply the appropriate padding function
         df['padded_seq'] = df.apply(self.padding_fn, axis=1)
         
         # Standardize expression values - global standardization
-        # Store parameters to support inference later
         self.expression_mean = df['expression'].mean()
         self.expression_std = df['expression'].std()
         if self.expression_std < 1e-8:  # Avoid division by very small numbers:
@@ -877,7 +889,6 @@ class PromoterDataModule(pl.LightningDataModule):
         df['expression_standardized'] = (df['expression'] - self.expression_mean) / self.expression_std
         
         # Alternative: standardize within each complexity group
-        # This might be better if the distributions differ significantly
         complexity_groups = df.groupby('complexity')
         self.complexity_stats = {}
         
@@ -895,17 +906,17 @@ class PromoterDataModule(pl.LightningDataModule):
         df_train = df[df['set'] == 'train'].reset_index(drop=True)
         df_val = df[df['set'] == 'val'].reset_index(drop=True)
         
-        # Create your datasets using standardized values
+        # Create datasets using standardized values
         self.dataset_train = PromoterDataset(
             df_train, 
             sequence_column='padded_seq',
-            target_column='expression_standardized'  # Use the standardized values
+            target_column='expression_standardized'
         )
         
         self.dataset_val = PromoterDataset(
             df_val, 
             sequence_column='padded_seq',
-            target_column='expression_standardized'  # Use the standardized values
+            target_column='expression_standardized'
         )
 
     def train_dataloader(self):
