@@ -16,7 +16,7 @@ parameters:
   stopping_mode:
     value: max
   stopping_patience:
-    value: 30
+    value: 50
   logger_type:
     value: wandb
   logger_project:
@@ -28,60 +28,61 @@ parameters:
   
   # Data module parameters
   datafile_path:
-    value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_df.csv
+    value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_with_rc_df_e7_e30_separate.csv
   batch_size:
-    distribution: categorical
-    values: [512, 1024]
+    values: 512
   seed:
     value: 42
   num_workers:
     value: 8
   padded_seq_len:
     value: 84
+  use_reverse_complements:
+    distribution: categorical
+    values: [True, False]
   
   # Model module parameters
   input_len:
     value: 84
   conv1_channels:
     distribution: int_uniform
-    min: 120
-    max: 200
+    min: 400
+    max: 500
   conv1_kernel_size:
     distribution: categorical
-    values: [7, 9, 12]
+    values: [5, 7, 9]  # Focus on smaller kernels
   conv2_channels:
     distribution: int_uniform
-    min: 120
-    max: 200
+    min: 300
+    max: 450
   conv2_kernel_size:
     distribution: categorical
-    values: [7, 9, 12]
+    values: [3, 6, 9]
   conv3_channels:
     distribution: int_uniform
-    min: 120
-    max: 200
+    min: 300
+    max: 500
   conv3_kernel_size:
     distribution: categorical
-    values: [5, 7, 9]
+    values: [3, 5]
   n_linear_layers:
     distribution: categorical
-    values: [1, 2, 3]
+    values: [1, 2]
   linear_channels:
     distribution: int_uniform
-    min: 800
-    max: 1200
+    min: 256
+    max: 1024
   linear_activation:
     distribution: categorical
-    values: [ReLU, LeakyReLU]
+    values: [ReLU, LeakyReLU, ELU]
   linear_dropout_p:
     distribution: uniform
-    min: 0.05
-    max: 0.2
+    min: 0.15
+    max: 0.5
   n_outputs:
     value: 1
   use_batch_norm:
-    distribution: categorical
-    values: [True, False]
+    value: True
   use_weight_norm:
     value: False
   loss_criterion:
@@ -95,7 +96,8 @@ parameters:
   
   # Graph module parameters
   optimizer:
-    value: Adam
+    distribution: categorical
+    values: [Adam, AdamW]
   lr:
     distribution: log_uniform_values
     min: 0.0001
@@ -103,21 +105,25 @@ parameters:
   weight_decay:
     distribution: log_uniform_values
     min: 0.00005
-    max: 0.0001
+    max: 0.001
   amsgrad:
     value: True
   beta1:
-    value: 0.9
+    distribution: uniform
+    min: 0.8
+    max: 0.95
   beta2:
-    value: 0.999
+    distribution: uniform
+    min: 0.99
+    max: 0.999
     
   # Scheduler parameters - unified approach
   scheduler:
     distribution: categorical
     values: [CosineAnnealingWarmRestarts, "None"]
   T_0:
-    distribution: categorical
-    values: [4096, 8192]
+    distribution: categorical  
+    values: [1000, 2000, 4096]
   T_mult:
     value: 1
   eta_min:
@@ -131,7 +137,7 @@ parameters:
   devices:
     value: 1
   min_epochs:
-    value: 40
+    value: 50
   max_epochs:
     value: 300
   precision:
