@@ -28,9 +28,9 @@ parameters:
   
   # Data module parameters
   datafile_path:
-    value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_with_rc_df_e7_e30_separate.csv
+    value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_with_rc_df_comb_apr1.csv
   batch_size:
-    values: 512
+    value: 512
   seed:
     value: 42
   num_workers:
