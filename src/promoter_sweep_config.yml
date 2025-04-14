@@ -1,7 +1,7 @@
 program: train_wandb_log.py 
 method: bayes
 metric:
-  name: epoch_end_r2
+  name: epoch_end_val_r2
   goal: maximize
 parameters:
   # Main arguments
@@ -12,7 +12,7 @@ parameters:
   graph_module:
     value: CNNBasicTraining
   checkpoint_monitor:
-    value: epoch_end_r2
+    value: epoch_end_val_r2
   stopping_mode:
     value: max
   stopping_patience:
@@ -74,7 +74,7 @@ parameters:
     max: 1024
   linear_activation:
     distribution: categorical
-    values: [ReLU, LeakyReLU, ELU]
+    values: [ReLU, LeakyReLU]
   linear_dropout_p:
     distribution: uniform
     min: 0.15
