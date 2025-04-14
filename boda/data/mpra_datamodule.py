@@ -710,6 +710,7 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
             arr = df[self.activity_columns].values  # shape [N, M]
             means = arr.mean(axis=0)
             stds  = arr.std(axis=0)
+            stds = np.maximum(stds, 1e-8)  # Ensure no std is too close to zero
 
             up_cut  = means + stds * self.std_multiple_cut + self.up_cutoff_move
             down_cut= means - stds * self.std_multiple_cut
