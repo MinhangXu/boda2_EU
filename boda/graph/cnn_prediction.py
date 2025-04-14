@@ -299,9 +299,8 @@ class CNNBasicTraining(LightningModule):
         })
         '''
         # Log with epoch as x-axis
-        on_epoch = False  # This ensures metrics are logged per epoch
-        self.log('epoch_end_val_r2', r2_val_score, on_epoch=True)
-        self.log('step_val_r2', r2_val_score, on_epoch=on_epoch)
+        on_epoch = True  # This ensures metrics are logged per epoch
+        self.log('epoch_end_val_r2', r2_val_score, on_epoch=on_epoch)
         self.log('arithmetic_mean_loss', arit_mean, on_epoch=on_epoch)
         self.log('harmonic_mean_loss', harm_mean, on_epoch=on_epoch) 
         self.log('prediction_mean_spearman', mean_spearman.item(), on_epoch=on_epoch)
