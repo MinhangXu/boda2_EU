@@ -164,6 +164,11 @@ def save_model(data_module, model_module, graph_module, model, trainer, args):
     
     print(f"Model saved to {args['Main args'].artifact_path}/{filename}")
 
+    if wandb.run is not None:
+        # Save the artifact path so that it becomes part of the run's summary
+        wandb.run.summary["model_saved_path"] = os.path.join(args['Main args'].artifact_path, filename)
+
+
 #######################
 # Main Training Logic #
 #######################
