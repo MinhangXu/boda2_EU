@@ -1,0 +1,131 @@
+program: train_wandb_log.py 
+method: bayes
+metric:
+  name: epoch_end_r2
+  goal: maximize
+parameters:
+  # Main arguments
+  data_module:
+    value: UTR_Polysome_MPRA_DataModule
+  model_module:
+    value: UTR_BassetVL
+  graph_module:
+    value: CNNBasicTraining
+  checkpoint_monitor:
+    value: epoch_end_val_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 40
+  logger_type:
+    value: wandb
+  logger_project:
+    value: utr5_optimization
+  run_name:
+    value: "utr5_test_{runid}"
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/utr5/sweep/apr14_sweep_egfp_2/
+  
+  # Data module parameters
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/5utr_learn/GSM3130436_egfp_unmod_2.csv.gz
+  sep:
+    value: comma
+  sequence_column:
+    value: utr
+  activity_columns:
+    value: rl
+  top_n:
+    value: 300000
+  test_n:
+    value: 20000    
+  padded_seq_len:
+    value: 50
+  use_reverse_complements:
+    distribution: categorical
+    values: [True, False]
+  batch_size:
+    value: 256
+  author_style_split:
+    value: True
+  use_standard_scaler:
+    value: True
+  seed:
+    value: 42
+  
+  # Model module parameters
+  input_len:
+    value: 50
+  conv1_channels:
+    distribution: int_uniform  
+    min: 100
+    max: 160  # Keep closer to your working value of 120
+  conv1_kernel_size:
+    distribution: categorical
+    values: [6, 8, 10]  # Include your working value of 8
+  conv2_channels:
+    distribution: int_uniform
+    min: 100
+    max: 160
+  conv2_kernel_size:
+    distribution: categorical
+    values: [6, 8, 10]
+  conv3_channels:
+    distribution: int_uniform
+    min: 100
+    max: 160
+  conv3_kernel_size:
+    distribution: categorical
+    values: [6, 8, 10]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]  # Your working value is 1
+  linear_channels:
+    distribution: int_uniform
+    min: 30
+    max: 80  # Keep closer to your working value of 40
+  linear_activation:
+    value: ReLU
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.1
+    max: 0.3
+  n_outputs:
+    value: 1
+  use_batch_norm:
+    value: True
+  use_weight_norm:
+    value: False
+  loss_criterion:
+    value: MSELoss
+  
+  # Graph module parameters
+  optimizer:
+    value: Adam
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.01
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00005
+    max: 0.001
+  amsgrad:
+    value: True
+    
+  # Scheduler parameters
+  # left blank for default values
+    
+  # Lightning Trainer parameters
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  min_epochs:
+    value: 30
+  max_epochs:
+    value: 300
+  precision:
+    value: 16
+  default_root_dir:
+    value: /tmp/output/artifacts
