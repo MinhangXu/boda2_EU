@@ -218,6 +218,7 @@ class CNNBasicTraining(LightningModule):
         """
         x, y   = batch
         y_hat  = self(x)
+        
         # Add this condition to handle shape mismatch
         if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
             y_hat = y_hat.squeeze(1)

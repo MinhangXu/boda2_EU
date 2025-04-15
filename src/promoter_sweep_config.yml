@@ -24,7 +24,7 @@ parameters:
   run_name:
     value: "promoter_test_{runid}"
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/promoter/sweep/
+    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/promoter/sweep/apr14_sweep
   
   # Data module parameters
   datafile_path:
