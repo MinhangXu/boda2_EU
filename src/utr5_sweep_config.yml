@@ -24,19 +24,21 @@ parameters:
   run_name:
     value: "utr5_test_{runid}"
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/utr5/sweep/apr14_sweep_egfp_2/
+    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/utr5/sweep/apr14_sweep_mCherry_2/
   
   # Data module parameters
   datafile_path:
-    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/5utr_learn/GSM3130436_egfp_unmod_2.csv.gz
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/5utr_learn/GSM3130442_mcherry_2.csv
   sep:
     value: comma
   sequence_column:
     value: utr
   activity_columns:
     value: rl
+  total_reads_column:
+    value: total
   top_n:
-    value: 300000
+    value: 170000
   test_n:
     value: 20000    
   padded_seq_len:
