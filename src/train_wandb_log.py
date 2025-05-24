@@ -218,7 +218,11 @@ def main(args):
                 run_name = args['Main args'].run_name.replace("{runid}", run_id)
             else:
                 run_name = f"{args['Main args'].run_name}_{run_id}"
-            
+            print(f"Original run_name: {args['Main args'].run_name}")
+            print(f"Generated run_id: {run_id}")
+            print(f"Processed run_name: {run_name}")
+
+            # Initialize W&B logger
             logger = WandbLogger(
                 project=args['Main args'].logger_project,
                 name=run_name,

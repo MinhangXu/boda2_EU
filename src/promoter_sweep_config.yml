@@ -71,7 +71,7 @@ parameters:
   linear_channels:
     distribution: int_uniform
     min: 256
-    max: 1024
+    max: 600
   linear_activation:
     distribution: categorical
     values: [ReLU, LeakyReLU]

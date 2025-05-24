@@ -927,3 +927,241 @@ class PromoterDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(self.dataset_val, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+    
+
+class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
+    """
+    DataModule for 3'UTR RNA Activity prediction from Library 1 data.
+    Adapted from MPRA_DataModule for the specific 3'UTR library structure.
+    """
+
+    @staticmethod
+    def add_data_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group = parser.add_argument_group('UTR3 RNA Activity DataModule')
+
+        group.add_argument('--datafile_path', type=str, required=True, 
+                          help="Path to processed 3'UTR library CSV file.")
+        group.add_argument('--target_cell_type', type=str, default='c2',
+                          help="Cell type to filter for (default: c2 for HepG2).")
+        group.add_argument('--sequence_column', type=str, default='seq')
+        group.add_argument('--activity_column', type=str, default='rna_activity')
+        group.add_argument('--fold_column', type=str, default='fold')
+        
+        # Splitting parameters
+        group.add_argument('--train_split', type=float, default=0.8)
+        group.add_argument('--val_split', type=float, default=0.1)
+        group.add_argument('--test_split', type=float, default=0.1)
+        group.add_argument('--split_by_fold', type=utils.str2bool, default=True,
+                          help="Whether to use fold column for splitting")
+        
+        # Data processing parameters
+        group.add_argument('--batch_size', type=int, default=32)
+        group.add_argument('--num_workers', type=int, default=8)
+        group.add_argument('--normalize_activity', type=utils.str2bool, default=True)
+        group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
+        group.add_argument('--duplication_cutoff', type=float, default=None)
+        group.add_argument('--min_activity_threshold', type=float, default=None,
+                          help="Minimum activity threshold for filtering")
+        group.add_argument('--max_activity_threshold', type=float, default=None,
+                          help="Maximum activity threshold for filtering")
+        group.add_argument('--remove_outliers', type=utils.str2bool, default=True,
+                          help="Remove activity outliers (>3 std from mean)")
+        group.add_argument('--seed', type=int, default=42)
+        
+        return parser
+    
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        return parser
+    
+    @staticmethod
+    def process_args(grouped_args):
+        data_args = grouped_args['UTR3 RNA Activity DataModule']
+        return data_args
+
+    def __init__(self,
+                 datafile_path,
+                 target_cell_type='c2',
+                 sequence_column='seq',
+                 activity_column='rna_activity',
+                 fold_column='fold',
+                 train_split=0.8,
+                 val_split=0.1,
+                 test_split=0.1,
+                 split_by_fold=True,
+                 batch_size=32,
+                 num_workers=8,
+                 normalize_activity=True,
+                 use_reverse_complements=False,
+                 duplication_cutoff=None,
+                 min_activity_threshold=None,
+                 max_activity_threshold=None,
+                 seed=42,
+                 **kwargs):
+        """
+        Initialize the 3'UTR RNA Activity DataModule.
+        """
+        super().__init__()
+        self.datafile_path = datafile_path
+        self.target_cell_type = target_cell_type
+        self.sequence_column = sequence_column
+        self.activity_column = activity_column
+        self.fold_column = fold_column
+        
+        self.train_split = train_split
+        self.val_split = val_split
+        self.test_split = test_split
+        self.split_by_fold = split_by_fold
+        
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.normalize_activity = normalize_activity
+        self.use_reverse_complements = use_reverse_complements
+        self.duplication_cutoff = duplication_cutoff
+        self.min_activity_threshold = min_activity_threshold
+        self.max_activity_threshold = max_activity_threshold
+        self.seed = seed
+        
+        # Will be set in setup()
+        self.activity_mean = None
+        self.activity_std = None
+
+    def setup(self, stage='fit'):
+        """
+        Setup datasets for training, validation, and testing.
+        """
+        print(f"Loading 3'UTR data from {self.datafile_path}")
+        df = pd.read_csv(self.datafile_path)
+        
+        print(f"Original data shape: {df.shape}")
+        print(f"Available cell types: {df['cell_type'].unique()}")
+        
+        # Filter for target cell type
+        df = df[df['cell_type'] == self.target_cell_type].copy()
+        print(f"After filtering for {self.target_cell_type}: {df.shape}")
+        
+        # Remove rows with missing activity or sequence
+        initial_len = len(df)
+        df = df.dropna(subset=[self.sequence_column, self.activity_column])
+        print(f"After removing NaN values: {len(df)} (removed {initial_len - len(df)})")
+        
+        # Apply activity thresholds if specified
+        if self.min_activity_threshold is not None:
+            df = df[df[self.activity_column] >= self.min_activity_threshold]
+            print(f"After min activity threshold ({self.min_activity_threshold}): {len(df)}")
+            
+        if self.max_activity_threshold is not None:
+            df = df[df[self.activity_column] <= self.max_activity_threshold]
+            print(f"After max activity threshold ({self.max_activity_threshold}): {len(df)}")
+        
+        # Normalize activity if requested
+        if self.normalize_activity:
+            self.activity_mean = df[self.activity_column].mean()
+            self.activity_std = df[self.activity_column].std()
+            df[self.activity_column] = (df[self.activity_column] - self.activity_mean) / self.activity_std
+            print(f"Normalized activity: mean={self.activity_mean:.4f}, std={self.activity_std:.4f}")
+        
+        # Split the data
+        if self.split_by_fold and self.fold_column in df.columns:
+            # Use fold column for splitting (similar to your existing splits)
+            print("Splitting by fold column...")
+            fold_counts = df[self.fold_column].value_counts()
+            print(f"Fold distribution: {fold_counts}")
+            
+            # Assign splits based on fold values
+            # This is a simplified approach - you might want to customize based on your fold values
+            unique_folds = sorted(df[self.fold_column].unique())
+            n_folds = len(unique_folds)
+            
+            train_folds = unique_folds[:int(n_folds * self.train_split)]
+            val_folds = unique_folds[int(n_folds * self.train_split):int(n_folds * (self.train_split + self.val_split))]
+            test_folds = unique_folds[int(n_folds * (self.train_split + self.val_split)):]
+            
+            df_train = df[df[self.fold_column].isin(train_folds)]
+            df_val = df[df[self.fold_column].isin(val_folds)]
+            df_test = df[df[self.fold_column].isin(test_folds)]
+            
+        else:
+            # Random split
+            print("Random splitting...")
+            np.random.seed(self.seed)
+            
+            # Shuffle the dataframe
+            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+            
+            n_total = len(df)
+            n_train = int(n_total * self.train_split)
+            n_val = int(n_total * self.val_split)
+            
+            df_train = df[:n_train]
+            df_val = df[n_train:n_train + n_val]
+            df_test = df[n_train + n_val:]
+        
+        print(f"Split sizes - Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(df_test)}")
+        
+        # Convert to datasets
+        self.dataset_train = self._df_to_dataset(df_train, 'train')
+        self.dataset_val = self._df_to_dataset(df_val, 'val')
+        self.dataset_test = self._df_to_dataset(df_test, 'test')
+
+    def _df_to_dataset(self, df, split_name):
+        """
+        Convert DataFrame to Dataset.
+        """
+        print(f"Converting {split_name} data to tensors...")
+        
+        # Convert sequences to tensors
+        sequences = []
+        activities = []
+        
+        for idx, row in df.iterrows():
+            seq_str = row[self.sequence_column]
+            activity = row[self.activity_column]
+            
+            # Convert sequence to one-hot tensor
+            seq_tensor = utils.dna2tensor(seq_str)
+            sequences.append(seq_tensor)
+            activities.append(activity)
+        
+        sequences_tensor = torch.stack(sequences)
+        activities_tensor = torch.tensor(activities, dtype=torch.float32).unsqueeze(1)  # Shape: [N, 1]
+        
+        print(f"{split_name} tensors - Sequences: {sequences_tensor.shape}, Activities: {activities_tensor.shape}")
+        
+        # Create dataset with optional data augmentation
+        if self.use_reverse_complements and split_name == 'train':
+            dataset = DNAActivityDataset(
+                sequences_tensor, 
+                activities_tensor.squeeze(1),  # DNAActivityDataset expects 1D activities
+                duplication_cutoff=self.duplication_cutoff,
+                use_reverse_complements=True
+            )
+        else:
+            dataset = torch.utils.data.TensorDataset(sequences_tensor, activities_tensor)
+        
+        return dataset
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset_val,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.dataset_test,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
