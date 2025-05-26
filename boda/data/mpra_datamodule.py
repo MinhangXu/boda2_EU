@@ -1136,14 +1136,19 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
         print(f"{split_name} tensors - Sequences: {sequences_tensor.shape}, Activities: {activities_tensor.shape}")
         
         # Create dataset with optional data augmentation
-        if self.use_reverse_complements and split_name == 'train':
+        if split_name == 'train': # Duplication and RC augmentation typically only for training
+            current_sort_tensor = None
+            if self.duplication_cutoff is not None:
+                current_sort_tensor = activities_tensor.squeeze(1) # Use activities for sorting
+
             dataset = DNAActivityDataset(
-                sequences_tensor, 
+                sequences_tensor,
                 activities_tensor.squeeze(1),  # DNAActivityDataset expects 1D activities
+                sort_tensor=current_sort_tensor, # Pass the sort_tensor
                 duplication_cutoff=self.duplication_cutoff,
-                use_reverse_complements=True
+                use_reverse_complements=self.use_reverse_complements # Make sure this is honored based on sweep
             )
-        else:
+        else: # For val and test, no duplication or RC augmentation usually
             dataset = torch.utils.data.TensorDataset(sequences_tensor, activities_tensor)
         
         return dataset
