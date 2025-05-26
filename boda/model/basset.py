@@ -360,6 +360,9 @@ class UTR_BassetVL(ptl.LightningModule):
 
         group.add_argument('--conv3_channels', type=int, default=120)
         group.add_argument('--conv3_kernel_size', type=int, default=8)
+        # ADD THIS NEW ARGUMENT for pooling
+        group.add_argument('--adaptive_pool_output_size', type=int, default=0,
+                            help="Output size for AdaptiveAvgPool1d after convs. 0 for no pooling.")
 
         group.add_argument('--n_linear_layers', type=int, default=1)
         group.add_argument('--linear_channels', type=int, default=40)
@@ -391,18 +394,19 @@ class UTR_BassetVL(ptl.LightningModule):
     #######################
 
     def __init__(self,
-                 input_len=50,
-                 conv1_channels=120, conv1_kernel_size=8,
-                 conv2_channels=120, conv2_kernel_size=8,
-                 conv3_channels=120, conv3_kernel_size=8,
-                 n_linear_layers=1, linear_channels=40,
-                 linear_activation='ReLU',
-                 linear_dropout_p=0.2,
-                 n_outputs=1,
-                 use_batch_norm=True,
-                 use_weight_norm=False,
-                 loss_criterion='MSELoss',
-                 loss_args={}):
+             input_len=50,
+             conv1_channels=120, conv1_kernel_size=8,
+             conv2_channels=120, conv2_kernel_size=8,
+             conv3_channels=120, conv3_kernel_size=8,
+             adaptive_pool_output_size=0, # New parameter
+             n_linear_layers=1, linear_channels=40,
+             linear_activation='ReLU',
+             linear_dropout_p=0.2,
+             n_outputs=1,
+             use_batch_norm=True,
+             use_weight_norm=False,
+             loss_criterion='MSELoss',
+             loss_args={}):
         super().__init__()
 
         # Store hyperparams
@@ -413,6 +417,8 @@ class UTR_BassetVL(ptl.LightningModule):
         self.conv2_kernel_size = conv2_kernel_size
         self.conv3_channels    = conv3_channels
         self.conv3_kernel_size = conv3_kernel_size
+
+        self.adaptive_pool_output_size = adaptive_pool_output_size # Store new param
 
         self.n_linear_layers   = n_linear_layers
         self.linear_channels   = linear_channels
@@ -461,13 +467,22 @@ class UTR_BassetVL(ptl.LightningModule):
             weight_norm=self.use_weight_norm
         )
 
+        # Conditionally add adaptive pooling
+        if self.adaptive_pool_output_size > 0:
+            self.pool = nn.AdaptiveAvgPool1d(self.adaptive_pool_output_size)
+        else:
+            self.pool = nn.Identity() # Does nothing if no pooling
+
         # Nonlinearity & dropout
         self.nonlin  = getattr(nn, self.linear_activation)()
         self.dropout = nn.Dropout(p=self.linear_dropout_p)
 
-        # Flatten factor = conv3_channels * input_len
-        # (No pooling => the length never changes.)
-        self.flatten_dim = self.conv3_channels * self.input_len
+        # Adjust flatten_dim calculation
+        if self.adaptive_pool_output_size > 0:
+            self.flatten_dim = self.conv3_channels * self.adaptive_pool_output_size
+        else:
+            # No pooling => the length (input_len) never changes with 'same' padding.
+            self.flatten_dim = self.conv3_channels * self.input_len
 
         # Build linear layers
         in_features = self.flatten_dim
@@ -493,25 +508,24 @@ class UTR_BassetVL(ptl.LightningModule):
 
     def encode(self, x):
         """
-        Apply three conv layers (no pooling).
+        Apply three conv layers, then optional pooling.
         x shape: [batch, 4, seq_len]
         """
-        # print("input:", x.shape)
         x = self.conv1(x)
         x = self.nonlin(x)
         x = self.dropout(x)
-        # print("after conv1:", x.shape)
         x = self.conv2(x)
         x = self.nonlin(x)
         x = self.dropout(x)
-        # print("after conv2:", x.shape)
         x = self.conv3(x)
         x = self.nonlin(x)
         x = self.dropout(x)
-        # print("after conv3:", x.shape)
-        # Flatten => [batch, conv3_channels * seq_len]
+
+        # Apply pooling
+        x = self.pool(x) # If Identity, shape is preserved before flatten
+
+        # Flatten => [batch, channels * (pooled_len or input_len)]
         x = x.reshape(x.shape[0], -1)
-        # print("after flatten:", x.shape)
         return x
 
     def decode(self, x):
