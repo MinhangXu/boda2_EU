@@ -1064,45 +1064,50 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
         
         # Split the data
         if self.split_by_fold and self.fold_column in df.columns:
-            # Use fold column for splitting (similar to your existing splits)
-            print("Splitting by fold column...")
-            fold_counts = df[self.fold_column].value_counts()
-            print(f"Fold distribution: {fold_counts}")
+            # --- Logic for splitting using the pre-assigned fold column ---
+            print(f"Splitting by pre-assigned fold column: '{self.fold_column}'...")
             
-            # Use the actual fold values directly - they seem to be pre-assigned
-            df_train = df[df[self.fold_column] == 'train']
-            df_val = df[df[self.fold_column] == 'val'] 
-            df_test = df[df[self.fold_column] == 'test']
+            # Ensure the fold values are what you expect, e.g., 'train', 'val', 'test'
+            # This is good for debugging and ensuring data integrity.
+            expected_fold_values = ['train', 'val', 'test'] # Or whatever your specific labels are
+            actual_fold_values = df[self.fold_column].unique()
+            print(f"Actual unique values in '{self.fold_column}': {actual_fold_values}")
+
+            # Perform the split based on column values
+            df_train = df[df[self.fold_column] == 'train'].copy()
+            df_val = df[df[self.fold_column] == 'val'].copy()
+            df_test = df[df[self.fold_column] == 'test'].copy()
             
-            # Fallback to random split if any split is empty
+            # Check if any of the splits are empty, which might indicate an issue
+            if len(df_train) == 0:
+                print(f"Warning: Training set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
             if len(df_val) == 0:
-                print("Validation set is empty, falling back to random split...")
-                np.random.seed(self.seed)
-                df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
-                
-                n_total = len(df)
-                n_train = int(n_total * self.train_split)
-                n_val = int(n_total * self.val_split)
-                
-                df_train = df[:n_train]
-                df_val = df[n_train:n_train + n_val]
-                df_test = df[n_train + n_val:]
+                print(f"Warning: Validation set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
+            if len(df_test) == 0:
+                print(f"Warning: Test set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
             
         else:
-            # Random split
+            # --- Logic for random splitting (if not splitting by fold or fold_column not found) ---
+            if not (self.split_by_fold and self.fold_column in df.columns): # Print reason for random split
+                 if not self.split_by_fold:
+                     print(f"Performing random split because 'split_by_fold' is False.")
+                 elif not self.fold_column in df.columns:
+                     print(f"Performing random split because fold_column '{self.fold_column}' not found in DataFrame.")
+
             print("Random splitting...")
-            np.random.seed(self.seed)
+            np.random.seed(self.seed) #
             
             # Shuffle the dataframe
-            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True) #
             
-            n_total = len(df)
-            n_train = int(n_total * self.train_split)
-            n_val = int(n_total * self.val_split)
+            n_total = len(df) #
+            n_train = int(n_total * self.train_split) #
+            n_val = int(n_total * self.val_split) #
+            # n_test is implicitly the remainder
             
-            df_train = df[:n_train]
-            df_val = df[n_train:n_train + n_val]
-            df_test = df[n_train + n_val:]
+            df_train = df[:n_train] #
+            df_val = df[n_train:n_train + n_val] #
+            df_test = df[n_train + n_val:] #
         
         print(f"Split sizes - Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(df_test)}")
         
