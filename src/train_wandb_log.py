@@ -317,6 +317,7 @@ def main(args):
         wandb.finish()
 
 if __name__ == '__main__':
+    print("============Starting BODA training script with W&B integration==============")
     # Build the base parser
     parser = argparse.ArgumentParser(description="BODA trainer with W&B integration", add_help=False)
     group = parser.add_argument_group('Main args')
