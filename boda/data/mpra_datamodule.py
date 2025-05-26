@@ -1069,18 +1069,24 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
             fold_counts = df[self.fold_column].value_counts()
             print(f"Fold distribution: {fold_counts}")
             
-            # Assign splits based on fold values
-            # This is a simplified approach - you might want to customize based on your fold values
-            unique_folds = sorted(df[self.fold_column].unique())
-            n_folds = len(unique_folds)
+            # Use the actual fold values directly - they seem to be pre-assigned
+            df_train = df[df[self.fold_column] == 'train']
+            df_val = df[df[self.fold_column] == 'val'] 
+            df_test = df[df[self.fold_column] == 'test']
             
-            train_folds = unique_folds[:int(n_folds * self.train_split)]
-            val_folds = unique_folds[int(n_folds * self.train_split):int(n_folds * (self.train_split + self.val_split))]
-            test_folds = unique_folds[int(n_folds * (self.train_split + self.val_split)):]
-            
-            df_train = df[df[self.fold_column].isin(train_folds)]
-            df_val = df[df[self.fold_column].isin(val_folds)]
-            df_test = df[df[self.fold_column].isin(test_folds)]
+            # Fallback to random split if any split is empty
+            if len(df_val) == 0:
+                print("Validation set is empty, falling back to random split...")
+                np.random.seed(self.seed)
+                df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+                
+                n_total = len(df)
+                n_train = int(n_total * self.train_split)
+                n_val = int(n_total * self.val_split)
+                
+                df_train = df[:n_train]
+                df_val = df[n_train:n_train + n_val]
+                df_test = df[n_train + n_val:]
             
         else:
             # Random split
