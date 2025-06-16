@@ -21,6 +21,8 @@ from boda.common import utils
 from boda.common.utils import unpack_artifact, model_fn
 
 import hypertune
+import wandb
+
 
 #####################
 # PTL Module saving #
