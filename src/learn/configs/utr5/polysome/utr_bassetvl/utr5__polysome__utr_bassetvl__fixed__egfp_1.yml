@@ -1,0 +1,118 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: boda2_EU-src_learn
+method: grid
+metric:
+  name: epoch_end_val_r2
+  goal: maximize
+parameters:
+  data_module:
+    value: UTR_Polysome_MPRA_DataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/5utr_learn/GSM3130435_egfp_unmod_1.csv.gz
+  sep:
+    value: comma
+  sequence_column:
+    value: utr
+  activity_columns:
+    value: rl
+  total_reads_column:
+    value: total_reads
+  left_flank:
+    value: ""
+  right_flank:
+    value: ""
+  padded_seq_len:
+    value: 50
+  use_reverse_complements:
+    value: False
+  batch_size:
+    value: 256
+  author_style_split:
+    value: True
+  use_standard_scaler:
+    value: True
+  top_n:
+    value: 280000
+  test_n:
+    value: 20000
+  seed:
+    value: 42
+
+  model_module:
+    value: UTR_BassetVL
+  input_len:
+    value: 50
+  conv1_channels:
+    value: 120
+  conv1_kernel_size:
+    value: 8
+  conv2_channels:
+    value: 120
+  conv2_kernel_size:
+    value: 8
+  conv3_channels:
+    value: 120
+  conv3_kernel_size:
+    value: 8
+  n_linear_layers:
+    value: 1
+  linear_channels:
+    value: 40
+  linear_activation:
+    value: ReLU
+  linear_dropout_p:
+    value: 0.2
+  n_outputs:
+    value: 1
+  use_batch_norm:
+    value: True
+  use_weight_norm:
+    value: False
+  loss_criterion:
+    value: MSELoss
+
+  graph_module:
+    value: CNNBasicTraining
+  optimizer:
+    value: Adam
+  lr:
+    value: 0.001
+  weight_decay:
+    value: 0.0
+  amsgrad:
+    value: False
+  beta1:
+    value: 0.9
+  beta2:
+    value: 0.999
+  checkpoint_monitor:
+    value: epoch_end_val_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 100
+
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  min_epochs:
+    value: 10
+  max_epochs:
+    value: 100
+  precision:
+    value: 16
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr5/polysome/utr_bassetvl/fixed_egfp_1
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr5/polysome/utr_bassetvl/fixed_egfp_1
+  tolerate_unknown_args:
+    value: False
+
+  logger_type:
+    value: wandb
+  logger_project:
+    value: utr5__polysome__utr_bassetvl
+  run_name:
+    value: utr5_polysome__egfp_1__fixed

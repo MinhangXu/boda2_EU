@@ -1,4 +1,6 @@
-program: train_wandb_log.py 
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: boda2_EU-src_learn
 method: bayes
 metric:
   name: epoch_end_val_r2
@@ -20,12 +22,11 @@ parameters:
   logger_type:
     value: wandb
   logger_project:
-    value: promoter_optimization
-  run_name:
-    value: "promoter_test_{runid}"
+    value: promoter__deboer_core__utr_bassetvl
+  run_name: { value: "promoter_test_{runid}" }
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/promoter/sweep/apr14_sweep
-  
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/promoter/deboer_core/utr_bassetvl/bayes
+
   # Data module parameters
   datafile_path:
     value: /home/minhang/synBio_AL/Core_Promoter_Model/deBoer_model/preprocess_data/core_promoter_data_with_rc_df_comb_apr1.csv
@@ -40,7 +41,7 @@ parameters:
   use_reverse_complements:
     distribution: categorical
     values: [True, False]
-  
+
   # Model module parameters
   input_len:
     value: 84
@@ -50,7 +51,7 @@ parameters:
     max: 500
   conv1_kernel_size:
     distribution: categorical
-    values: [5, 7, 9]  # Focus on smaller kernels
+    values: [5, 7, 9]
   conv2_channels:
     distribution: int_uniform
     min: 300
@@ -89,11 +90,11 @@ parameters:
     value: "MSELoss"
   reduction:
     value: mean
-  
+
   # For L1KLmixed and MSEKLmixed
   # beta:
     # value: 5.0
-  
+
   # Graph module parameters
   optimizer:
     distribution: categorical
@@ -116,13 +117,13 @@ parameters:
     distribution: uniform
     min: 0.99
     max: 0.999
-    
+
   # Scheduler parameters - unified approach
   scheduler:
     distribution: categorical
     values: [CosineAnnealingWarmRestarts, "None"]
   T_0:
-    distribution: categorical  
+    distribution: categorical
     values: [1000, 2000, 4096]
   T_mult:
     value: 1
@@ -130,7 +131,7 @@ parameters:
     value: 0.0
   scheduler_interval:
     value: step
-    
+
   # Lightning Trainer parameters
   accelerator:
     value: gpu
@@ -143,4 +144,4 @@ parameters:
   precision:
     value: 16
   default_root_dir:
-    value: /tmp/output/artifacts
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/promoter/deboer_core/utr_bassetvl/bayes

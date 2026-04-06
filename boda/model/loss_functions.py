@@ -378,7 +378,7 @@ def add_criterion_specific_args(parser, criterion_name):
     elif criterion_name == 'CrossEntropyLoss':
         group.add_argument('--reduction', type=str, default='mean', help='Specifies reduction applied when loss is calculated: `"none"`|`"mean"`|`"sum"`. See torch.nn docs for more details.')
         group.add_argument('--ignore_index', type=int, default=-100, help='Specifies a target value that is ignored and does not contribute to the input gradient. See torch.nn docs for more details.')
-        group.add_argument('--label_smooting', type=float, default=0., help='A float in [0.0, 1.0]. Specifies the amount of smoothing when computing the loss, where 0.0 means no smoothing. See torch.nn docs for more details.')
+        group.add_argument('--label_smoothing', type=float, default=0., help='A float in [0.0, 1.0]. Specifies the amount of smoothing when computing the loss, where 0.0 means no smoothing. See torch.nn docs for more details.')
     elif criterion_name == 'CTCLoss':
         group.add_argument('--blank', type=int, default=0, help='blank label.')
         group.add_argument('--reduction', type=str, default='mean', help='Specifies reduction applied when loss is calculated: `"none"`|`"mean"`|`"sum"`. See torch.nn docs for more details.')

@@ -1,4 +1,6 @@
 program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: boda2_EU-src_learn
 method: grid
 parameters:
   # Data module parameters
@@ -11,9 +13,9 @@ parameters:
   sequence_column:
     value: "nt_sequence"
   activity_columns:
-    value: "K562_mean HepG2_mean SKNSH_mean"
+    value: ["K562_mean", "HepG2_mean", "SKNSH_mean"]
   stderr_columns:
-    value: "lfcSE_k562 lfcSE_hepg2 lfcSE_sknsh"
+    value: ["lfcSE_k562", "lfcSE_hepg2", "lfcSE_sknsh"]
   synth_chr:
     value: "synth"
   synth_val_pct:
@@ -31,9 +33,9 @@ parameters:
   up_cutoff_move:
     value: "3"
   val_chrs:
-    value: "19 21 X"
+    value: ["19", "21", "X"]
   test_chrs:
-    value: "7 13"
+    value: ["7", "13"]
   padded_seq_len:
     value: "600"
   use_reverse_complements:
@@ -142,7 +144,7 @@ parameters:
     value: "/home/minhang/synBio_AL/boda2_EU/src/local_artifacts"
 
   # Logger parameters
-  logger:
+  logger_type:
     value: "wandb"
   logger_project:
     value: "boda_train"

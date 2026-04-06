@@ -1,0 +1,36 @@
+# `src/learn/run_registry` Guide
+
+This directory is the lightweight machine-readable registry layer for training
+and HPO bookkeeping.
+
+## Files
+
+- `best_runs.csv`
+  - curated best-known runs across task families
+- `sweep_launches.csv`
+  - append-only sweep launch log written by scripts in `src/learn/launch/`
+
+## Intended Use
+
+Use `best_runs.csv` when you need to answer:
+
+- what is the current best run for this task?
+- which config path produced it?
+- where should I look for artifacts or model paths?
+- what comparison group did it belong to?
+
+Use `sweep_launches.csv` when you need to answer:
+
+- which sweep did I just launch?
+- which config and launch script created it?
+- how many agents / runs were used?
+- which GPUs were assigned?
+
+## Workflow
+
+1. launch a sweep using `src/learn/launch/`
+2. let the launcher append a row to `sweep_launches.csv`
+3. inspect results in W&B
+4. confirm best checkpoints in notebook or local cache
+5. promote the winning run into `best_runs.csv`
+

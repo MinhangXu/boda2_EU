@@ -1,4 +1,6 @@
-program: train_wandb_log.py 
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: boda2_EU-src_learn
 method: bayes
 metric:
   name: epoch_end_val_r2
@@ -20,12 +22,12 @@ parameters:
   logger_type:
     value: wandb
   logger_project:
-    value: utr3_rna_activity_optimization
+    value: utr3__hani_rna_activity__utr_bassetvl
   run_name:
     value: "utr3_model_{runid}"
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/local_artifacts/utr3/sweep/
-  
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr3/hani_rna_activity/utr_bassetvl/bayes
+
   # Data module parameters
   datafile_path:
     value: /home/minhang/synBio_AL/opt_EU_learn_n_design/utr_hani_2025/processed_utr_data/3UTR_lib1_processed.csv
@@ -42,11 +44,9 @@ parameters:
   normalize_activity:
     value: True
   use_reverse_complements:
-    distribution: categorical
-    values: [True, False]
+    value: False
   duplication_cutoff:
-    distribution: categorical
-    values: [null, 2.0, 2.5, 3.0]
+    value: "None"
   batch_size:
     distribution: categorical
     values: [128, 256, 512]
@@ -54,11 +54,14 @@ parameters:
     value: 8
   seed:
     value: 42
-  
+
   # Model module parameters - Based on UTR_BassetVL architecture
   input_len:
-    value: 240  # Fixed based on your 3'UTR sequences
-  
+    value: 240
+  adaptive_pool_output_size:
+    distribution: categorical
+    values: [0, 5, 10]
+
   # Conv layer hyperparameters - scaled up for longer sequences
   conv1_channels:
     distribution: int_uniform
@@ -66,8 +69,8 @@ parameters:
     max: 400
   conv1_kernel_size:
     distribution: categorical
-    values: [7, 11, 15, 19]  # Similar to original Basset
-    
+    values: [7, 11, 15, 19]
+
   conv2_channels:
     distribution: int_uniform
     min: 150
@@ -75,7 +78,7 @@ parameters:
   conv2_kernel_size:
     distribution: categorical
     values: [7, 11, 15]
-    
+
   conv3_channels:
     distribution: int_uniform
     min: 150
@@ -83,7 +86,7 @@ parameters:
   conv3_kernel_size:
     distribution: categorical
     values: [5, 7, 11]
-  
+
   # Linear layer hyperparameters
   n_linear_layers:
     distribution: categorical
@@ -99,7 +102,7 @@ parameters:
     distribution: uniform
     min: 0.1
     max: 0.5
-  
+
   # Output and loss
   n_outputs:
     value: 1
@@ -110,7 +113,7 @@ parameters:
     value: False
   loss_criterion:
     value: MSELoss
-  
+
   # Graph module parameters (optimizer settings)
   optimizer:
     distribution: categorical
@@ -134,13 +137,13 @@ parameters:
     distribution: uniform
     min: 0.99
     max: 0.999
-    
+
   # Scheduler parameters - using CosineAnnealingWarmRestarts like utr5 config
   scheduler:
     distribution: categorical
     values: [CosineAnnealingWarmRestarts, "None"]
   T_0:
-    distribution: categorical  
+    distribution: categorical
     values: [500, 1000, 2000]
   T_mult:
     value: 1
@@ -148,7 +151,7 @@ parameters:
     value: 0.0
   scheduler_interval:
     value: step
-    
+
   # Lightning Trainer parameters
   accelerator:
     value: gpu
@@ -161,4 +164,4 @@ parameters:
   precision:
     value: 16
   default_root_dir:
-    value: /tmp/output/artifacts
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr3/hani_rna_activity/utr_bassetvl/bayes

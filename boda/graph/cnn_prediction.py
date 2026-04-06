@@ -248,10 +248,14 @@ class CNNBasicTraining(LightningModule):
         # Loss
         loss   = self.criterion(y_hat, y)
         self.log('step_valid_loss', loss)
+        # Compatibility alias for older sweeps that monitor `valid_loss`
+        self.log('valid_loss', loss)
 
         # R2 score
         r2 = r2_score(y_hat, y)
         self.log('step_valid_r2', r2)
+        # Compatibility alias for older runs expecting `valid_r2`
+        self.log('valid_r2', r2)
 
         # Pearson correlation
         pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y) 
@@ -306,6 +310,8 @@ class CNNBasicTraining(LightningModule):
         # Log with epoch as x-axis
         on_epoch = True  # This ensures metrics are logged per epoch
         self.log('epoch_end_val_r2', r2_val_score, on_epoch=on_epoch)
+        # Compatibility alias for older checkpoints/early stopping monitors
+        self.log('val_r2_score', r2_val_score, on_epoch=on_epoch)
         self.log('arithmetic_mean_loss', arit_mean, on_epoch=on_epoch)
         self.log('harmonic_mean_loss', harm_mean, on_epoch=on_epoch) 
         self.log('prediction_mean_spearman', mean_spearman.item(), on_epoch=on_epoch)

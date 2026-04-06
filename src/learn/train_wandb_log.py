@@ -129,8 +129,13 @@ def save_model(data_module, model_module, graph_module, model, trainer, args):
         trainer: The PyTorch Lightning trainer
         args: Dictionary of input arguments
     """
-    # Get the root directory from Trainer args
-    local_dir = args['pl.Trainer'].default_root_dir
+    # Resolve an output directory robustly: argparse may keep default_root_dir as None.
+    local_dir = args['pl.Trainer'].default_root_dir   # default_root_dir: intermediate training state model; working checkpoints 
+    if local_dir is None:
+        local_dir = getattr(trainer, 'default_root_dir', None)
+    if local_dir is None:
+        local_dir = '/tmp/output/artifacts'
+    os.makedirs(local_dir, exist_ok=True)
     
     # Create a dictionary with all relevant information
     save_dict = {
@@ -145,10 +150,10 @@ def save_model(data_module, model_module, graph_module, model, trainer, args):
         'random_tag': random.randint(100000, 999999)
     }
     
-    # Save the checkpoint
+    # Save the checkpoint (intermediate training state model; working checkpoints)
     torch.save(save_dict, os.path.join(local_dir, 'torch_checkpoint.pt'))
     
-    # Create a compressed archive
+    # Create a compressed archive (final model artifacts)
     filename = f'model_artifacts__{save_dict["timestamp"]}__{save_dict["random_tag"]}.tar.gz'
     with tempfile.TemporaryDirectory() as tmpdirname:
         with tarfile.open(os.path.join(tmpdirname, filename), 'w:gz') as tar:

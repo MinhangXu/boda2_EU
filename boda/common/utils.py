@@ -45,6 +45,18 @@ import torch.nn.functional as F
 from . import constants
 from .. import model as _model
 
+def float_or_none(value):
+    """
+    Converts a string to a float, or the string 'None' to Python None.
+    """
+    if isinstance(value, str) and value.lower() == 'none':
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        # It's good practice for argparse type functions to raise ArgumentTypeError
+        raise argparse.ArgumentTypeError(f"'{value}' is not a valid float or the string 'None'")
+
 def install(package):
     """
     Install a Python package using pip.

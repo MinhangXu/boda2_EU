@@ -13,6 +13,8 @@ import pandas as pd
 
 from ..common import constants, utils
 
+# selectively prevent gradient updates for certain parts of a tensor during backpropagation.
+# It's used to "freeze" specific positions or nucleotide channels if needed.
 def mask_gradients(in_tensor, mask_tensor):
     filter_tensor = 1 - mask_tensor
     grad_pass  = in_tensor.mul(filter_tensor)
@@ -121,15 +123,21 @@ class FastSeqProp(nn.Module):
         pbar = tqdm(range(1, n_steps+1), desc='Steps', position=0, leave=True)
         for step in pbar:
             optimizer.zero_grad()
-            sampled_nucleotides = self.params()
+            sampled_nucleotides = self.params() # calls STE.forward(), which samples discrete one-hot sequences
             if grad_mask is not None:
                 sampled_nucleotides = mask_gradients(sampled_nucleotides, grad_mask)
-            energy = self.energy_fn(sampled_nucleotides)
+            energy = self.energy_fn(sampled_nucleotides)  # Differentiation Objective: It takes the discrete sampled_nucleotides as input
             energy = self.params.rebatch( energy )
             energy_hist.append(energy.detach().cpu().numpy())
             energy = energy.mean()
-            energy.backward()
+
+            # Calculate Gradients (Compute d_E/d_theta)
+            energy.backward()    
+
+            # Update Parameters: theta <- theta - learning_rate * d_E/d_theta
             optimizer.step()
+
+            # Update learning rate for next step
             scheduler.step()
             if log_param_hist:
                 param_hist.append(np.copy(self.params.theta.detach().cpu().numpy()))

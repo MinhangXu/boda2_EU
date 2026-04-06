@@ -13,6 +13,8 @@ from sklearn.preprocessing import StandardScaler
 
 from ..common import constants, utils
 
+
+
 class DNAActivityDataset(Dataset):
     """
     A PyTorch Dataset representing a collection of DNA sequences along with associated activity values.
@@ -62,6 +64,23 @@ class DNAActivityDataset(Dataset):
         if self.use_reverse_complements:
             dataset_len = 2 * dataset_len
         return dataset_len
+
+    def raw_len(self):
+        return self.n_examples
+
+    def post_duplication_len(self):
+        return self.n_examples + self.n_duplicated
+
+    def augmentation_summary(self):
+        rc_multiplier = 2 if self.use_reverse_complements else 1
+        post_duplication_len = self.post_duplication_len()
+        return {
+            'raw': self.raw_len(),
+            'duplicated': self.n_duplicated,
+            'post_duplication': post_duplication_len,
+            'rc_multiplier': rc_multiplier,
+            'effective': post_duplication_len * rc_multiplier,
+        }
     
     def __getitem__(self, idx):
         if idx >= len(self):
@@ -310,8 +329,22 @@ class MPRA_DataModule(pl.LightningDataModule):
         print(f'self.synth_chr {self.synth_chr} and all_chrs {all_chrs}')
         self.train_chrs = all_chrs - self.val_chrs - self.test_chrs - self.synth_chr_as_set - self.exclude_chr_train
 
+        print(f'Train chromosomes: {sorted(self.train_chrs)}')
+        print(f'Validation chromosomes: {sorted(self.val_chrs)}')
+        print(f'Test chromosomes: {sorted(self.test_chrs)}')
+        if self.exclude_chr_train:
+            print(f'Excluded from chromosome-based train split: {sorted(self.exclude_chr_train)}')
+
+        chr_train_raw_size = 0
+        chr_val_raw_size = 0
+        chr_test_raw_size = 0
+        synth_train_raw_size = 0
+        synth_val_raw_size = 0
+        synth_test_raw_size = 0
+
         if len(self.train_chrs) > 0:
             split_temp_df = temp_df.loc[temp_df[self.chr_column].isin(self.train_chrs)]
+            chr_train_raw_size = len(split_temp_df)
             list_tensor_seq = []
             for index, row in split_temp_df.iterrows():
                 list_tensor_seq.append(utils.row_dna2tensor(row, in_column_name=self.pad_column_name))
@@ -326,6 +359,7 @@ class MPRA_DataModule(pl.LightningDataModule):
 
         if len(self.val_chrs) > 0:
             split_temp_df = temp_df.loc[temp_df[self.chr_column].isin(self.val_chrs)]
+            chr_val_raw_size = len(split_temp_df)
             list_tensor_seq = []
             for index, row in split_temp_df.iterrows():
                 list_tensor_seq.append(utils.row_dna2tensor(row, in_column_name=self.pad_column_name))
@@ -336,6 +370,7 @@ class MPRA_DataModule(pl.LightningDataModule):
         
         if len(self.test_chrs) > 0:
             split_temp_df = temp_df.loc[temp_df[self.chr_column].isin(self.test_chrs)]
+            chr_test_raw_size = len(split_temp_df)
             list_tensor_seq = []
             for index, row in split_temp_df.iterrows():
                 list_tensor_seq.append(utils.row_dna2tensor(row, in_column_name=self.pad_column_name))
@@ -361,6 +396,9 @@ class MPRA_DataModule(pl.LightningDataModule):
             synth_val_size     = int(synth_num_examples * self.synth_val_pct // 100)
             synth_test_size    = int(synth_num_examples * self.synth_test_pct // 100)
             synth_train_size   = synth_num_examples - synth_val_size - synth_test_size  
+            synth_train_raw_size = synth_train_size
+            synth_val_raw_size = synth_val_size
+            synth_test_raw_size = synth_test_size
     
             synth_dataset_split = random_split(synth_dataset,
                                                [synth_train_size, synth_val_size, synth_test_size],
@@ -394,30 +432,89 @@ class MPRA_DataModule(pl.LightningDataModule):
             self.dataset_train = self.chr_dataset_train
             self.dataset_val = self.chr_dataset_val
             self.dataset_test = self.chr_dataset_test
+
+        def dataset_summary(dataset):
+            if dataset is None:
+                return {
+                    'raw': 0,
+                    'duplicated': 0,
+                    'post_duplication': 0,
+                    'effective': 0,
+                }
+            if isinstance(dataset, DNAActivityDataset):
+                return dataset.augmentation_summary()
+            if isinstance(dataset, ConcatDataset):
+                summary = {
+                    'raw': 0,
+                    'duplicated': 0,
+                    'post_duplication': 0,
+                    'effective': 0,
+                }
+                for subdataset in dataset.datasets:
+                    sub_summary = dataset_summary(subdataset)
+                    for key in summary:
+                        summary[key] += sub_summary[key]
+                return summary
+            dataset_len = len(dataset)
+            return {
+                'raw': dataset_len,
+                'duplicated': 0,
+                'post_duplication': dataset_len,
+                'effective': dataset_len,
+            }
+
+        train_summary = dataset_summary(self.dataset_train)
+        val_summary = dataset_summary(self.dataset_val)
+        test_summary = dataset_summary(self.dataset_test)
         
         #--------- print train/val/test info ---------
-        if self.dataset_train is not None: self.train_size = len(self.dataset_train)
+        if self.dataset_train is not None: self.train_size = train_summary['effective']
         else: self.train_size = 0
             
-        if self.dataset_val is not None: self.val_size = len(self.dataset_val)
+        if self.dataset_val is not None: self.val_size = val_summary['effective']
         else: self.val_size = 0
             
-        if self.dataset_test is not None: self.test_size = len(self.dataset_test)
+        if self.dataset_test is not None: self.test_size = test_summary['effective']
         else: self.test_size = 0
-            
-        train_pct = round(100 * self.train_size / self.num_examples, 2)
-        val_pct   = round(100 * self.val_size / self.num_examples, 2)
-        test_pct  = round(100 * self.test_size / self.num_examples, 2)
-        excluded_size = self.num_examples - self.train_size - self.val_size - self.test_size
-        excluded_pct = round(100 * excluded_size / self.num_examples, 2)
+
+        raw_train_size = train_summary['raw']
+        raw_val_size = val_summary['raw']
+        raw_test_size = test_summary['raw']
+        raw_train_pct = round(100 * raw_train_size / self.num_examples, 2)
+        raw_val_pct = round(100 * raw_val_size / self.num_examples, 2)
+        raw_test_pct = round(100 * raw_test_size / self.num_examples, 2)
+        raw_excluded_size = self.num_examples - raw_train_size - raw_val_size - raw_test_size
+        raw_excluded_pct = round(100 * raw_excluded_size / self.num_examples, 2)
+
         print('-'*50)
         print('')
-        #print(f'Number of examples in synthetic train {synth_train_size}')
-        print(f'Number of examples in train: {self.train_size} ({train_pct}%)')
-        print(f'Number of examples in val:   {self.val_size} ({val_pct}%)')
-        print(f'Number of examples in test:  {self.test_size} ({test_pct}%)')
+        print('Raw split sizes before training-time augmentation:')
+        print(f'  train: {raw_train_size} ({raw_train_pct}%)')
+        print(f'  val:   {raw_val_size} ({raw_val_pct}%)')
+        print(f'  test:  {raw_test_size} ({raw_test_pct}%)')
+        print(f'  excluded: {raw_excluded_size} ({raw_excluded_pct}%)')
         print('')
-        print(f'Excluded from train: {excluded_size} ({excluded_pct})%')
+        print('Raw split breakdown:')
+        print(f'  chr train:   {chr_train_raw_size}')
+        print(f'  synth train: {synth_train_raw_size}')
+        print(f'  chr val:     {chr_val_raw_size}')
+        print(f'  synth val:   {synth_val_raw_size}')
+        print(f'  chr test:    {chr_test_raw_size}')
+        print(f'  synth test:  {synth_test_raw_size}')
+        print('')
+        print('Training augmentation summary:')
+        print(f'  duplication_cutoff: {self.duplication_cutoff}')
+        print(f'  reverse complements enabled: {self.use_reverse_complements}')
+        print(f'  raw train examples: {train_summary["raw"]}')
+        print(f'  duplicated train examples added: {train_summary["duplicated"]}')
+        print(f'  post-duplication train examples: {train_summary["post_duplication"]}')
+        print(f'  effective train dataset size: {train_summary["effective"]}')
+        print('')
+        print('Effective dataset sizes seen by dataloaders:')
+        print(f'  train: {self.train_size}')
+        print(f'  val:   {self.val_size}')
+        print(f'  test:  {self.test_size}')
+        print('')
         print('-'*50)    
                 
     def train_dataloader(self):
@@ -929,19 +1026,19 @@ class PromoterDataModule(pl.LightningDataModule):
         return DataLoader(self.dataset_val, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
     
 
-class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
+class HaniGoozardi_RNA_Activity_DataModule(pl.LightningDataModule):
     """
-    DataModule for 3'UTR RNA Activity prediction from Library 1 data.
-    Adapted from MPRA_DataModule for the specific 3'UTR library structure.
+    DataModule for 3'UTR and 5'UTR RNA Activity prediction from the Hani Goozardi paper.
+    Adapted from MPRA_DataModule for the specific UTR library structure.
     """
 
     @staticmethod
     def add_data_specific_args(parent_parser):
         parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
-        group = parser.add_argument_group('UTR3 RNA Activity DataModule')
+        group = parser.add_argument_group('Hani Goozardi RNA Activity DataModule')
 
         group.add_argument('--datafile_path', type=str, required=True, 
-                          help="Path to processed 3'UTR library CSV file.")
+                          help="Path to processed 3'UTR or 5'UTR library CSV file.")
         group.add_argument('--target_cell_type', type=str, default='c2',
                           help="Cell type to filter for (default: c2 for HepG2).")
         group.add_argument('--sequence_column', type=str, default='seq')
@@ -965,19 +1062,17 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
                           help="Minimum activity threshold for filtering")
         group.add_argument('--max_activity_threshold', type=float, default=None,
                           help="Maximum activity threshold for filtering")
-        group.add_argument('--remove_outliers', type=utils.str2bool, default=True,
-                          help="Remove activity outliers (>3 std from mean)")
         group.add_argument('--seed', type=int, default=42)
         
         return parser
-    
+
     @staticmethod
     def add_conditional_args(parser, known_args):
         return parser
-    
+
     @staticmethod
     def process_args(grouped_args):
-        data_args = grouped_args['UTR3 RNA Activity DataModule']
+        data_args = grouped_args['Hani Goozardi RNA Activity DataModule']
         return data_args
 
     def __init__(self,
@@ -1000,7 +1095,7 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
                  seed=42,
                  **kwargs):
         """
-        Initialize the 3'UTR RNA Activity DataModule.
+        Initialize the Hani Goozardi RNA Activity DataModule.
         """
         super().__init__()
         self.datafile_path = datafile_path
@@ -1031,16 +1126,18 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
         """
         Setup datasets for training, validation, and testing.
         """
-        print(f"Loading 3'UTR data from {self.datafile_path}")
+        print(f"Loading UTR data from {self.datafile_path}")
         df = pd.read_csv(self.datafile_path)
         
         print(f"Original data shape: {df.shape}")
-        print(f"Available cell types: {df['cell_type'].unique()}")
-        
-        # Filter for target cell type
-        df = df[df['cell_type'] == self.target_cell_type].copy()
-        print(f"After filtering for {self.target_cell_type}: {df.shape}")
-        
+        if 'cell_type' in df.columns:
+            print(f"Available cell types: {df['cell_type'].unique()}")
+            # Filter for target cell type
+            df = df[df['cell_type'] == self.target_cell_type].copy()
+            print(f"After filtering for {self.target_cell_type}: {df.shape}")
+        else:
+            print("No 'cell_type' column found, using all data.")
+
         # Remove rows with missing activity or sequence
         initial_len = len(df)
         df = df.dropna(subset=[self.sequence_column, self.activity_column])
@@ -1064,54 +1161,42 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
         
         # Split the data
         if self.split_by_fold and self.fold_column in df.columns:
-            # --- Logic for splitting using the pre-assigned fold column ---
             print(f"Splitting by pre-assigned fold column: '{self.fold_column}'...")
             
-            # Ensure the fold values are what you expect, e.g., 'train', 'val', 'test'
-            # This is good for debugging and ensuring data integrity.
-            expected_fold_values = ['train', 'val', 'test'] # Or whatever your specific labels are
+            expected_fold_values = ['train', 'val', 'test']
             actual_fold_values = df[self.fold_column].unique()
             print(f"Actual unique values in '{self.fold_column}': {actual_fold_values}")
 
-            # Perform the split based on column values
             df_train = df[df[self.fold_column] == 'train'].copy()
             df_val = df[df[self.fold_column] == 'val'].copy()
             df_test = df[df[self.fold_column] == 'test'].copy()
             
-            # Check if any of the splits are empty, which might indicate an issue
             if len(df_train) == 0:
-                print(f"Warning: Training set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
+                print(f"Warning: Training set is empty after splitting by fold. Check '{self.fold_column}' column values.")
             if len(df_val) == 0:
-                print(f"Warning: Validation set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
+                print(f"Warning: Validation set is empty after splitting by fold. Check '{self.fold_column}' column values.")
             if len(df_test) == 0:
-                print(f"Warning: Test set is empty after splitting by fold. Check '{self.fold_column}' column values and distribution.")
-            
+                print(f"Warning: Test set is empty after splitting by fold. Check '{self.fold_column}' column values.")
         else:
-            # --- Logic for random splitting (if not splitting by fold or fold_column not found) ---
-            if not (self.split_by_fold and self.fold_column in df.columns): # Print reason for random split
-                 if not self.split_by_fold:
-                     print(f"Performing random split because 'split_by_fold' is False.")
-                 elif not self.fold_column in df.columns:
-                     print(f"Performing random split because fold_column '{self.fold_column}' not found in DataFrame.")
+            if not self.split_by_fold:
+                 print(f"Performing random split because 'split_by_fold' is False.")
+            elif self.fold_column not in df.columns:
+                 print(f"Performing random split because fold_column '{self.fold_column}' not found in DataFrame.")
 
             print("Random splitting...")
-            np.random.seed(self.seed) #
+            np.random.seed(self.seed)
+            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
             
-            # Shuffle the dataframe
-            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True) #
+            n_total = len(df)
+            n_train = int(n_total * self.train_split)
+            n_val = int(n_total * self.val_split)
             
-            n_total = len(df) #
-            n_train = int(n_total * self.train_split) #
-            n_val = int(n_total * self.val_split) #
-            # n_test is implicitly the remainder
-            
-            df_train = df[:n_train] #
-            df_val = df[n_train:n_train + n_val] #
-            df_test = df[n_train + n_val:] #
+            df_train = df[:n_train]
+            df_val = df[n_train:n_train + n_val]
+            df_test = df[n_train + n_val:]
         
         print(f"Split sizes - Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(df_test)}")
         
-        # Convert to datasets
         self.dataset_train = self._df_to_dataset(df_train, 'train')
         self.dataset_val = self._df_to_dataset(df_val, 'val')
         self.dataset_test = self._df_to_dataset(df_test, 'test')
@@ -1122,7 +1207,6 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
         """
         print(f"Converting {split_name} data to tensors...")
         
-        # Convert sequences to tensors
         sequences = []
         activities = []
         
@@ -1130,30 +1214,28 @@ class UTR3_RNA_Activity_DataModule(pl.LightningDataModule):
             seq_str = row[self.sequence_column]
             activity = row[self.activity_column]
             
-            # Convert sequence to one-hot tensor
             seq_tensor = utils.dna2tensor(seq_str)
             sequences.append(seq_tensor)
             activities.append(activity)
         
         sequences_tensor = torch.stack(sequences)
-        activities_tensor = torch.tensor(activities, dtype=torch.float32).unsqueeze(1)  # Shape: [N, 1]
+        activities_tensor = torch.tensor(activities, dtype=torch.float32).unsqueeze(1)
         
         print(f"{split_name} tensors - Sequences: {sequences_tensor.shape}, Activities: {activities_tensor.shape}")
         
-        # Create dataset with optional data augmentation
-        if split_name == 'train': # Duplication and RC augmentation typically only for training
+        if split_name == 'train':
             current_sort_tensor = None
             if self.duplication_cutoff is not None:
-                current_sort_tensor = activities_tensor.squeeze(1) # Use activities for sorting
+                current_sort_tensor = activities_tensor.squeeze(1)
 
             dataset = DNAActivityDataset(
                 sequences_tensor,
-                activities_tensor.squeeze(1),  # DNAActivityDataset expects 1D activities
-                sort_tensor=current_sort_tensor, # Pass the sort_tensor
+                activities_tensor.squeeze(1),
+                sort_tensor=current_sort_tensor,
                 duplication_cutoff=self.duplication_cutoff,
-                use_reverse_complements=self.use_reverse_complements # Make sure this is honored based on sweep
+                use_reverse_complements=self.use_reverse_complements
             )
-        else: # For val and test, no duplication or RC augmentation usually
+        else:
             dataset = torch.utils.data.TensorDataset(sequences_tensor, activities_tensor)
         
         return dataset

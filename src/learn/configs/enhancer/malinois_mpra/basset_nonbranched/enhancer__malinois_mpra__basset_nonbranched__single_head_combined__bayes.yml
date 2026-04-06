@@ -1,0 +1,169 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: boda2_EU-src_learn
+method: bayes
+metric:
+  name: epoch_end_val_r2
+  goal: maximize
+parameters:
+  # Data module parameters
+  data_module:
+    value: MPRA_DataModule
+  datafile_path:
+    value: "/home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/enhancer/malinois_mpra/MPRA_ALL_HD_v2__single_head_combined.tsv"
+  sep:
+    value: "tab"
+  sequence_column:
+    value: "nt_sequence"
+  activity_columns:
+    value: ["combined_activity_zmean"]
+  stderr_columns:
+    value: ["combined_stderr_max"]
+  synth_chr:
+    value: "synth"
+  synth_val_pct:
+    value: "10.0"
+  synth_test_pct:
+    value: "10.0"
+  synth_seed:
+    value: "0"
+  batch_size:
+    distribution: categorical
+    values: [512, 768, 1024]
+  duplication_cutoff:
+    distribution: categorical
+    values: [2.0, 5.0]
+  std_multiple_cut:
+    value: 6.0
+  up_cutoff_move:
+    value: "3"
+  val_chrs:
+    value: ["19", "21", "X"]
+  test_chrs:
+    value: ["7", "13"]
+  padded_seq_len:
+    value: "600"
+  use_reverse_complements:
+    distribution: categorical
+    values: [True, False]
+  num_workers:
+    value: "8"
+
+  # Model module parameters
+  model_module:
+    value: BassetVL
+  input_len:
+    value: "600"
+  conv1_channels:
+    distribution: int_uniform
+    min: 240
+    max: 360
+  conv1_kernel_size:
+    distribution: categorical
+    values: [15, 19, 23]
+  conv2_channels:
+    distribution: int_uniform
+    min: 160
+    max: 260
+  conv2_kernel_size:
+    distribution: categorical
+    values: [7, 11, 15]
+  conv3_channels:
+    distribution: int_uniform
+    min: 160
+    max: 260
+  conv3_kernel_size:
+    distribution: categorical
+    values: [5, 7, 11]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2, 3]
+  linear_channels:
+    distribution: int_uniform
+    min: 512
+    max: 1400
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, ELU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.05
+    max: 0.45
+  n_outputs:
+    value: "1"
+  use_batch_norm:
+    value: "True"
+  use_weight_norm:
+    value: "False"
+  loss_criterion:
+    value: "MSELoss"
+
+  # Graph module parameters
+  graph_module:
+    value: CNNBasicTraining
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.0005
+    max: 0.005
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.0005
+  amsgrad:
+    distribution: categorical
+    values: [True, False]
+  beta1:
+    distribution: uniform
+    min: 0.84
+    max: 0.95
+  beta2:
+    distribution: uniform
+    min: 0.90
+    max: 0.999
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  scheduler_interval:
+    value: "step"
+  T_0:
+    distribution: categorical
+    values: [2048, 4096, 8192]
+  T_mult:
+    value: "1"
+  eta_min:
+    value: "0.0"
+  last_epoch:
+    value: "-1"
+
+  # Trainer/Checkpoint parameters
+  checkpoint_monitor:
+    value: "epoch_end_val_r2"
+  stopping_mode:
+    value: "max"
+  stopping_patience:
+    value: "40"
+  accelerator:
+    value: "gpu"
+  devices:
+    value: "1"
+  min_epochs:
+    value: "40"
+  max_epochs:
+    value: "250"
+  precision:
+    value: "16"
+  default_root_dir:
+    value: "/tmp/output/artifacts"
+  artifact_path:
+    value: "/home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/enhancer/malinois_mpra/basset_nonbranched/combined_single_head"
+
+  # Logger parameters
+  logger_type:
+    value: "wandb"
+  logger_project:
+    value: "enhancer_malinois_single_head_combined"
+  run_name:
+    value: "enhancer_nonbranched_combined_{runid}"

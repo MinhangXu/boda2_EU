@@ -621,9 +621,15 @@ class StraightThroughParameters(ParamsBase):
         self.batch_size = self.theta.shape[self.batch_dim]
 
         if self.use_norm:
+            # If normalization is enabled, create an InstanceNorm1d layer.
+            # num_features=self.num_classes means it expects the channel dimension (M=4)
+            # to be the one specified by num_features (usually dim 1 for 1D data like sequences).
+            # affine=self.use_affine (False in your example) means it won't have learnable
+            # scale (gamma) and shift (beta) parameters after normalization.
             self.norm = nn.InstanceNorm1d(num_features=self.num_classes, 
                                           affine=self.use_affine)
         else:
+            # If normalization is disabled, use nn.Identity, which does nothing.
             self.norm = nn.Identity()
         
     @property
@@ -660,13 +666,23 @@ class StraightThroughParameters(ParamsBase):
         Returns:
             torch.Tensor: Probabilities tensor.
         """
+        # If no specific tensor 'x' is passed, use the main learnable parameter 'self.theta'.
+        # 'self.theta' has shape (batch_size, n_channels, length)
         if x is None:
             x = self.theta
+
+        # Apply normalization (InstanceNorm1d or Identity) to the input tensor 'x'.
+        # self.norm was initialized in __init__ based on self.use_norm.
         logits = self.norm(x)
+
+        # Optional: Apply a mask to fix certain logit values if a mask is provided.
         if self.logit_mask is not None:
             masked_logits = logits.detach().mul( self.logit_mask )
             free_logits   = logits.mul( 1 - self.logit_mask )
             logits = free_logits + masked_logits
+        
+        # Apply the softmax function.
+        # Returns a tensor 'probs' of the same shape as 'logits'.
         return F.softmax(logits / tau, dim=self.token_dim)
         
     def get_sample(self, x=None, tau=1.):
@@ -680,13 +696,17 @@ class StraightThroughParameters(ParamsBase):
             torch.Tensor: Sampled tensor.
         """
         probs = self.get_probs(x, tau)
-        probs_t = torch.transpose(probs, self.token_dim, self.cat_axis)
-        sampled_idxs = Categorical( probs_t )
-        samples = sampled_idxs.sample( (self.n_samples, ) )
+        probs_t = torch.transpose(probs, self.token_dim, self.cat_axis)  # transpose such that Categorical can sample (in the last dim)
+        
+        sampled_idxs = Categorical( probs_t ) # use Categorical to sample from the distribution
+        samples = sampled_idxs.sample( (self.n_samples, ) ) # sample n_samples from the distribution
+        
         samples = F.one_hot(samples, num_classes=self.num_classes)
         samples = torch.transpose(samples, self.token_dim, self.cat_axis)
-        probs = probs.repeat( self.n_samples, *[1 for i in range(self.n_dims)] )
-        samples = samples - probs.detach() + probs
+
+        probs = probs.repeat( self.n_samples, *[1 for i in range(self.n_dims)] ) 
+        # one_hot_sample - probabilities_no_grad + probabilities_with_grad
+        samples = samples - probs.detach() + probs   # the core of the straight-through estimator (STE)
         return samples
     
     def add_flanks(self, my_sample):
