@@ -180,7 +180,7 @@ class MPRA_DataModule(pl.LightningDataModule):
                            help='number of gpus or cpu cores to be used') 
         group.add_argument('--normalize', type=utils.str2bool, default=False, 
                            help='apply standard score normalization')
-        group.add_argument('--duplication_cutoff', type=float, 
+        group.add_argument('--duplication_cutoff', type=utils.float_or_none,
                            help='sequences with max activities higher then this are duplicated in training')
         group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False,
                            help='Reverse complement to augment/duplicate training examples')
@@ -609,7 +609,7 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
         group.add_argument('--num_workers', type=int, default=8)
 
         # duplication_cutoff & reverse_complements
-        group.add_argument('--duplication_cutoff', type=float, default=None)
+        group.add_argument('--duplication_cutoff', type=utils.float_or_none, default=None)
         group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
         
         # fraction-based splits
@@ -930,6 +930,7 @@ class PromoterDataModule(pl.LightningDataModule):
 
         self.dataset_train = None
         self.dataset_val = None
+        self.dataset_test = None
 
         # Create a padding function similar to UTR modules.
         self.padding_fn = partial(utils.UTR_row_pad_sequence,
@@ -1002,9 +1003,13 @@ class PromoterDataModule(pl.LightningDataModule):
                 (df.loc[df['complexity'] == complexity, 'expression'] - mean) / std
             )
         
-        # Split by the 'set' column
+        # Split by the 'set' column. Some historical promoter exports only
+        # contain train/val rows; keep test optional so post-fit evaluation can
+        # run automatically when a held-out split is present without warning on
+        # older tables.
         df_train = df[df['set'] == 'train'].reset_index(drop=True)
         df_val = df[df['set'] == 'val'].reset_index(drop=True)
+        df_test = df[df['set'] == 'test'].reset_index(drop=True)
         
         # Create datasets using standardized values
         self.dataset_train = PromoterDataset(
@@ -1019,11 +1024,23 @@ class PromoterDataModule(pl.LightningDataModule):
             target_column='expression_standardized'
         )
 
+        if len(df_test) > 0:
+            self.dataset_test = PromoterDataset(
+                df_test,
+                sequence_column='padded_seq',
+                target_column='expression_standardized'
+            )
+
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
 
     def val_dataloader(self):
         return DataLoader(self.dataset_val, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+
+    def test_dataloader(self):
+        if self.dataset_test is None:
+            return None
+        return DataLoader(self.dataset_test, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
     
 
 class HaniGoozardi_RNA_Activity_DataModule(pl.LightningDataModule):
@@ -1057,7 +1074,7 @@ class HaniGoozardi_RNA_Activity_DataModule(pl.LightningDataModule):
         group.add_argument('--num_workers', type=int, default=8)
         group.add_argument('--normalize_activity', type=utils.str2bool, default=True)
         group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
-        group.add_argument('--duplication_cutoff', type=float, default=None)
+        group.add_argument('--duplication_cutoff', type=utils.float_or_none, default=None)
         group.add_argument('--min_activity_threshold', type=float, default=None,
                           help="Minimum activity threshold for filtering")
         group.add_argument('--max_activity_threshold', type=float, default=None,
@@ -1263,3 +1280,26 @@ class HaniGoozardi_RNA_Activity_DataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers
         )
+
+class UTR3_RNA_Activity_DataModule(HaniGoozardi_RNA_Activity_DataModule):
+    """
+    Alias of `HaniGoozardi_RNA_Activity_DataModule` for 3'UTR RNA-activity
+    training configs. Kept as a dedicated subclass so 3'UTR-specific
+    behavior (e.g. longer input_len, custom activity thresholds, duplication
+    policies) can diverge from the shared Hani Goozardi implementation without
+    breaking utr5 configs that still use the parent class.
+
+    Use in configs as: `data_module: UTR3_RNA_Activity_DataModule`.
+    """
+    pass
+
+
+class UTR5_RNA_Activity_DataModule(HaniGoozardi_RNA_Activity_DataModule):
+    """
+    Alias of `HaniGoozardi_RNA_Activity_DataModule` for 5'UTR RNA-activity
+    training configs. Provides a symmetric name to
+    `UTR3_RNA_Activity_DataModule` so utr5 configs can advertise their task
+    family in the `data_module` field. Existing utr5 configs that still
+    reference the parent class continue to work unchanged.
+    """
+    pass

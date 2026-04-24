@@ -1,0 +1,86 @@
+{
+  "data_path": "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt",
+  "model_path": "/home/minhang/synBio_AL/boda2_EU/tutorials/malinois_artifacts__20211113_021200__287348.tar.gz",
+  "outdir": "/home/minhang/synBio_AL/boda2_EU/src/finetune/learning_curve/lib1_enhancer_targeted_apr2026",
+  "device": "auto",
+  "seeds": [
+    17,
+    23,
+    19,
+    31
+  ],
+  "split_seed": 7,
+  "train_thresholds": [
+    1
+  ],
+  "test_min_barcodes": 4,
+  "val_frac_within_hq": 0.25,
+  "test_frac_within_hq": 0.25,
+  "train_size_fracs": [
+    0.05,
+    0.1,
+    0.2,
+    0.35,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "train_sampling_mode": "hq_first",
+  "min_train_size": 32,
+  "unfreeze_scopes": [
+    "branched_only",
+    "conv3_plus",
+    "full"
+  ],
+  "include_b1": true,
+  "include_b2": true,
+  "include_b3": true,
+  "b3_bcaps": [
+    10.0
+  ],
+  "b3_bcap": 8.0,
+  "min_weight": 0.1,
+  "head_lrs": [
+    0.0002,
+    0.0005
+  ],
+  "backbone_lrs": [
+    1e-05,
+    0.0001
+  ],
+  "head_lr": 0.0002,
+  "backbone_lr": 5e-05,
+  "weight_decay": 0.0001,
+  "max_epochs": 70,
+  "patience": 10,
+  "frozen_epochs": 2,
+  "train_batch_size": 128,
+  "force": false,
+  "repo_root": "/home/minhang/synBio_AL/boda2_EU",
+  "device_resolved": "cuda",
+  "run_id": "20260403T034826Z_7199da18",
+  "run_started_at": "2026-04-03T03:48:26.406507+00:00",
+  "settings": [
+    {
+      "name": "B1_no_RC",
+      "use_rc_augmentation": false,
+      "use_barcode_weighting": false,
+      "b_cap": null,
+      "min_weight": 0.1
+    },
+    {
+      "name": "B2_with_RC",
+      "use_rc_augmentation": true,
+      "use_barcode_weighting": false,
+      "b_cap": null,
+      "min_weight": 0.1
+    },
+    {
+      "name": "B3_with_RC_weighted_bcap_10",
+      "use_rc_augmentation": true,
+      "use_barcode_weighting": true,
+      "b_cap": 10.0,
+      "min_weight": 0.1
+    }
+  ]
+}

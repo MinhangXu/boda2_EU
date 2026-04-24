@@ -1,10 +1,10 @@
 program: train_wandb_log.py
 method: bayes
 metric:
-  name: epoch_end_val_r2
+  name: epoch_end_val_pearson_r2
   goal: maximize
 entity: minhangxu1998-baylor-college-of-medicine
-project: in_house_enhancer_from_scratch_basic_BassetVL_ResNet1DRegressor
+project: enhancer__bashor_in_house__scratch_basic__bassetvl_vs_resnet1d
 parameters:
   data_module:
     value: Lib1EnhancerDataModule
@@ -17,7 +17,7 @@ parameters:
   graph_module:
     value: CNNBasicTraining
   logger_project:
-    value: bashor_lib1_scratch_basic
+    value: enhancer__bashor_in_house__scratch_basic__bassetvl_vs_resnet1d
   run_name:
     value: lib1_scratch_basic_{runid}
   artifact_path:
@@ -69,7 +69,7 @@ parameters:
   max_epochs:
     value: 50
   checkpoint_monitor:
-    value: epoch_end_val_r2
+    value: epoch_end_val_pearson_r2
   stopping_mode:
     value: max
   stopping_patience:

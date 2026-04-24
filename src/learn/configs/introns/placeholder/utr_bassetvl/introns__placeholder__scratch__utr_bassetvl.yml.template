@@ -1,0 +1,103 @@
+# TEMPLATE — NOT EXECUTABLE YET.
+#
+# Rename to `introns__<real_target>__scratch__utr_bassetvl.yml` and strip the
+# `.template` suffix once the first intron MPRA dataset is available. Every
+# `TODO(introns_data)` below must be resolved before running `wandb sweep`.
+#
+# See ../../README.md for onboarding instructions.
+
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: introns__placeholder__scratch__utr_bassetvl
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+
+parameters:
+  # --- Identity / logging ---
+  data_module:
+    value: MPRA_DataModule  # TODO(introns_data): pick/add a dedicated data module in boda/data
+  model_module:
+    value: UTR_BassetVL
+  graph_module:
+    value: CNNBasicTraining
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 30
+  logger_type:
+    value: wandb
+  logger_project:
+    value: introns__placeholder__scratch__utr_bassetvl
+  run_name:
+    value: "introns_placeholder_{runid}"
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/introns/placeholder/utr_bassetvl/bayes
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/introns/placeholder/utr_bassetvl/bayes
+
+  # --- Data ---
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/INTRONS_TODO/path_to_intron_mpra_table.tsv  # TODO(introns_data)
+  sep:
+    value: tab
+  sequence_column:
+    value: sequence  # TODO(introns_data): confirm column name
+  activity_columns:
+    value: [activity]  # TODO(introns_data)
+  synth_val_pct:
+    value: "10.0"
+  synth_test_pct:
+    value: "10.0"
+  synth_seed:
+    value: "0"
+  batch_size:
+    distribution: categorical
+    values: [128, 256, 512]
+  num_workers:
+    value: 8
+  seed:
+    value: 42
+
+  # --- Model (starting from utr_bassetvl defaults; tune once data is real) ---
+  input_len:
+    value: 600  # TODO(introns_data): set to max intron fragment length
+  n_outputs:
+    value: 1
+  use_batch_norm:
+    distribution: categorical
+    values: [True, False]
+  use_weight_norm:
+    value: False
+  loss_criterion:
+    value: MSELoss
+
+  # --- Optimizer / scheduler ---
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.01
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.01
+  scheduler:
+    value: "None"
+
+  # --- Trainer ---
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  min_epochs:
+    value: 10
+  max_epochs:
+    value: 150
+  precision:
+    value: 16

@@ -10,7 +10,11 @@ LEARN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REGISTRY_DIR="${LEARN_DIR}/run_registry"
 SWEEP_LOG_CSV="${REGISTRY_DIR}/sweep_launches.csv"
 DEFAULT_WANDB_SWEEP_ENTITY="${DEFAULT_WANDB_SWEEP_ENTITY:-minhangxu1998-baylor-college-of-medicine}"
-DEFAULT_WANDB_SWEEP_PROJECT="${DEFAULT_WANDB_SWEEP_PROJECT:-boda2_EU-src_learn}"
+# Left intentionally empty: every curated config now declares an explicit
+# top-level `project:` (see WANDB_SWEEP_WORKFLOW.md). If a caller ships a
+# config without one and also does not export WANDB_SWEEP_PROJECT, the launch
+# should fail loudly rather than silently dump runs into a generic bucket.
+DEFAULT_WANDB_SWEEP_PROJECT="${DEFAULT_WANDB_SWEEP_PROJECT:-}"
 
 csv_escape() {
   local value="${1:-}"
@@ -97,7 +101,14 @@ resolve_wandb_sweep_project() {
     return 0
   fi
 
-  printf '%s\n' "${DEFAULT_WANDB_SWEEP_PROJECT}"
+  if [[ -n "${DEFAULT_WANDB_SWEEP_PROJECT}" ]]; then
+    printf '%s\n' "${DEFAULT_WANDB_SWEEP_PROJECT}"
+    return 0
+  fi
+
+  echo "ERROR: no W&B project resolved for ${config_path}." >&2
+  echo "       Set top-level 'project:' in the YAML or export WANDB_SWEEP_PROJECT." >&2
+  return 1
 }
 
 materialize_sweep_config() {
@@ -298,6 +309,19 @@ launch_wandb_agents() {
   shift 7
   local gpu_list=("$@")
 
+  # PILOT=1 shrinks a curated sweep to a 1-agent / 1-run smoke test, regardless
+  # of what the launcher script configured. Useful for verifying the config +
+  # data + model + graph + save_model chain before burning GPU hours on the
+  # full search space. Prefix the launcher invocation like:
+  #   PILOT=1 ./launch/utr3_hani_utr_bassetvl_sweep.sh
+  if [[ "${PILOT:-0}" == "1" ]]; then
+    echo "PILOT=1 detected: forcing NUM_AGENTS=1, NUM_RUNS=1 for ${config_path}"
+    num_agents=1
+    runs_per_agent=1
+    gpu_list=("${gpu_list[0]}")
+    LAUNCH_NOTES="${LAUNCH_NOTES:-pilot}"
+  fi
+
   local sweep_path
   sweep_path="$(create_sweep_if_needed "${config_path}")"
 
@@ -333,6 +357,28 @@ launch_wandb_agents() {
     echo "CREATE_SWEEP_ONLY=1, skipping agent launch."
     return 0
   fi
+
+  # Resolve an absolute config path so the provenance row in runs.csv is
+  # reproducible regardless of the agent's working directory.
+  local abs_config_path="${config_path}"
+  if [[ "${abs_config_path}" != /* ]]; then
+    abs_config_path="${LEARN_DIR}/${config_path}"
+  fi
+
+  # Metadata that each training process will stamp into provenance.json /
+  # run_registry/runs.csv. `wandb agent` inherits the parent shell's env, so
+  # exporting here reaches every Python process spawned below.
+  export BODA_CONFIG_PATH="${abs_config_path}"
+  export BODA_TASK_FAMILY="${task_family}"
+  export BODA_TARGET_FAMILY="${target_family}"
+  export BODA_COMPARISON_GROUP="${comparison_group}"
+  export BODA_LAUNCH_SCRIPT="${launch_script}"
+  export BODA_SWEEP_PATH="${sweep_path}"
+  export BODA_SWEEP_ID="${sweep_id}"
+  export BODA_WANDB_ENTITY="${wandb_entity}"
+  export BODA_WANDB_PROJECT="${wandb_project}"
+  export BODA_RUNS_CSV="${REGISTRY_DIR}/runs.csv"
+  export BODA_LAUNCH_NOTES="${LAUNCH_NOTES:-}"
 
   (
     cd "${LEARN_DIR}"

@@ -1,0 +1,1 @@
+mode,run_id,model_module,graph_module,train_size_frac,train_min_barcodes,use_reverse_complements,batch_size,lr,weight_decay,metric_name,logged_metric,eval_train_r2_classic,eval_train_pearson_sq,eval_val_r2_classic,eval_val_pearson_sq,eval_test_r2_classic,eval_test_pearson_sq,failure_type,best_ckpt_path,eval_error

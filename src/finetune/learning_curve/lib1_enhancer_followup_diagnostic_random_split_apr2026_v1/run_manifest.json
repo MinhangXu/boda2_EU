@@ -1,0 +1,81 @@
+{
+  "data_path": "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt",
+  "model_path": "/home/minhang/synBio_AL/boda2_EU/tutorials/malinois_artifacts__20211113_021200__287348.tar.gz",
+  "outdir": "/home/minhang/synBio_AL/boda2_EU/src/finetune/learning_curve/lib1_enhancer_followup_diagnostic_random_split_apr2026_v1",
+  "device": "auto",
+  "init_heads": [
+    "K562",
+    "HepG2",
+    "SKNSH"
+  ],
+  "seeds": [
+    17,
+    23,
+    19,
+    31
+  ],
+  "split_seed": 7,
+  "val_frac": 0.1,
+  "test_frac": 0.1,
+  "train_thresholds": [
+    1
+  ],
+  "train_priority_min_barcodes": 4,
+  "train_size_fracs": [
+    0.75,
+    1.0
+  ],
+  "train_sampling_mode": "random",
+  "min_train_size": 32,
+  "unfreeze_scopes": [
+    "branched_only",
+    "conv3_plus",
+    "full"
+  ],
+  "include_b2": true,
+  "include_b3": true,
+  "b3_bcap": 8.0,
+  "min_weight": 0.1,
+  "head_lr": 0.0005,
+  "backbone_lr": 0.0001,
+  "weight_decay": 0.0001,
+  "max_epochs": 200,
+  "patience": 50,
+  "frozen_epochs_grid": [
+    2,
+    0
+  ],
+  "train_batch_size": 128,
+  "force": false,
+  "repo_root": "/home/minhang/synBio_AL/boda2_EU",
+  "device_resolved": "cuda",
+  "run_id": "20260414T220505Z_fe14746b",
+  "run_started_at": "2026-04-14T22:05:05.886858+00:00",
+  "settings": [
+    {
+      "name": "B2_with_RC",
+      "use_rc_augmentation": true,
+      "use_barcode_weighting": false,
+      "b_cap": null,
+      "min_weight": 0.1
+    },
+    {
+      "name": "B3_with_RC_weighted_bcap_8",
+      "use_rc_augmentation": true,
+      "use_barcode_weighting": true,
+      "b_cap": 8.0,
+      "min_weight": 0.1
+    }
+  ],
+  "split_strategy": "random_all_per_seed",
+  "split_strategy_description": "Per-seed random validation/test drawn from the full dataset, ignoring HQ restriction for split creation.",
+  "selected_init_heads": [
+    "K562",
+    "HepG2",
+    "SKNSH"
+  ],
+  "data_sha256": "61b99fa0c0ae698a1d223429903d780e2738c109564768b3582954aa364cc224",
+  "per_epoch_train_metrics_logged": true,
+  "per_epoch_test_metrics_logged": true,
+  "lr_selection_note": "Single LR pair used to avoid another broad sweep. Defaults (`head_lr=5e-4`, `backbone_lr=1e-4`) are taken from the stronger top-end random-split targeted configurations so this run focuses on adaptation behavior rather than redoing HPO."
+}

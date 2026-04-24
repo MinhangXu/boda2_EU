@@ -13,9 +13,13 @@ The layout is:
 Current authored configs:
 
 - `configs/enhancer/malinois_mpra/basset_branched/enhancer__malinois_mpra__basset_branched__transfer_baseline.yml`
-- `configs/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_k562__bayes.yml`
-- `configs/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml`
+- `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_k562__bayes.yml`
+- `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml`
 - `configs/promoter/deboer_core/utr_bassetvl/promoter__deboer_core__utr_bassetvl__bayes.yml`
+- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_1.yml`
+- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_2.yml`
+- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__mcherry_1.yml`
+- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__mcherry_2.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__egfp_1.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__egfp_2.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_1.yml`
@@ -54,7 +58,8 @@ That keeps model comparisons local to one target family instead of scattering th
 
 For enhancer single-head transfer experiments, the directory name may describe the
 comparison intent more directly than the exact model class. For example,
-`basset_nonbranched/` currently maps to the `BassetVL` model class.
+the archived `configs/legacy/.../basset_nonbranched/` path maps to the
+`BassetVL` model class.
 
 The preferred enhancer single-head path is currently the combined pan-cell target:
 

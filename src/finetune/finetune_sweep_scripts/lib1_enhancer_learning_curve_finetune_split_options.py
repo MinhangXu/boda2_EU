@@ -23,6 +23,7 @@ Available split strategies
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -60,6 +61,7 @@ MAX_EPOCHS = 70
 EARLY_STOPPING_PATIENCE = 10
 DEFAULT_FROZEN_EPOCHS = 2
 TRAIN_BATCH_SIZE = 128
+CACHE_LAYOUT_VERSION = "per_epoch_train_test_metrics_v1"
 
 base = None
 
@@ -79,6 +81,21 @@ def get_base():
     if base is None:
         base = _load_base_module()
     return base
+
+
+def sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def hash_row_ids(df: pd.DataFrame) -> str:
+    if "row_id" not in df.columns:
+        return ""
+    joined = "\n".join(map(str, sorted(df["row_id"].tolist())))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
 SPLIT_STRATEGY_CHOICES = [
@@ -465,6 +482,10 @@ def main() -> None:
     manifest["split_strategy_description"] = SPLIT_STRATEGY_HELP[args.split_strategy]
     manifest["resolved_val_frac"] = val_frac
     manifest["resolved_test_frac"] = test_frac
+    manifest["cache_layout_version"] = CACHE_LAYOUT_VERSION
+    manifest["data_sha256"] = sha256_file(args.data_path)
+    manifest["per_epoch_train_metrics_logged"] = True
+    manifest["per_epoch_test_metrics_logged"] = True
     (args.outdir / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     print(f"Repo root: {base.REPO_ROOT}")
@@ -600,6 +621,11 @@ def main() -> None:
                 train_df, val_df, test_df, scaler = base.prepare_train_val_test_for_run(train_raw, val_df_raw, test_df_raw)
                 train_hq_count = int((train_raw[base.BARCODE_COLUMN] >= args.train_priority_min_barcodes).sum())
                 train_lq_count = int(len(train_raw) - train_hq_count)
+                split_hashes = {
+                    "train_row_id_hash": hash_row_ids(train_df),
+                    "val_row_id_hash": hash_row_ids(val_df),
+                    "test_row_id_hash": hash_row_ids(test_df),
+                }
 
                 for setting in settings:
                     for head_idx, head_name in enumerate(base.PRETRAINED_HEADS):
@@ -622,6 +648,7 @@ def main() -> None:
                                     cache_path = (
                                         cache_dir
                                         / "runs"
+                                        / CACHE_LAYOUT_VERSION
                                         / args.split_strategy
                                         / f"val{format_frac_tag(val_frac)}__test{format_frac_tag(test_frac)}"
                                         / f"{spec.tag()}.pkl"
@@ -653,6 +680,9 @@ def main() -> None:
                                             head_lr=spec.head_lr,
                                             backbone_lr=spec.backbone_lr,
                                             weight_decay=args.weight_decay,
+                                            test_df=test_df,
+                                            log_test_metrics_per_epoch=True,
+                                            log_train_metrics_per_epoch=True,
                                         )
                                         val_metrics, _ = base.evaluate_single_head_model(model, val_df, scaler, device=device)
                                         test_metrics, pred_df = base.evaluate_single_head_model(model, test_df, scaler, device=device)
@@ -682,6 +712,7 @@ def main() -> None:
                                         "test_is_fixed_across_seeds": split_payload["test_is_fixed_across_seeds"],
                                         "split_val_fraction": val_frac,
                                         "split_test_fraction": test_frac,
+                                        **split_hashes,
                                         "init_head": spec.init_head,
                                         "head_idx": spec.head_idx,
                                         "setting": spec.setting_name,
@@ -732,6 +763,7 @@ def main() -> None:
                                     hist["run_id"] = run_id
                                     hist["seed"] = spec.seed
                                     hist["split_strategy"] = args.split_strategy
+                                    hist["split_pool"] = split_payload["split_pool"]
                                     hist["split_seed_effective"] = split_payload["split_seed_effective"]
                                     hist["val_seed_effective"] = split_payload["val_seed_effective"]
                                     hist["test_seed_effective"] = split_payload["test_seed_effective"]
@@ -739,6 +771,9 @@ def main() -> None:
                                     hist["test_is_fixed_across_seeds"] = split_payload["test_is_fixed_across_seeds"]
                                     hist["split_val_fraction"] = val_frac
                                     hist["split_test_fraction"] = test_frac
+                                    hist["train_row_id_hash"] = split_hashes["train_row_id_hash"]
+                                    hist["val_row_id_hash"] = split_hashes["val_row_id_hash"]
+                                    hist["test_row_id_hash"] = split_hashes["test_row_id_hash"]
                                     hist["init_head"] = spec.init_head
                                     hist["head_idx"] = spec.head_idx
                                     hist["setting"] = spec.setting_name

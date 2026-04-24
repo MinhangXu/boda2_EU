@@ -3,7 +3,7 @@ import argparse
 import torch
 
 from .cnn_prediction import CNNBasicTraining
-from .utils import pearson_correlation, spearman_correlation, shannon_entropy, r2_score
+from .utils import pearson_correlation, spearman_correlation, shannon_entropy, pearson_r2_score, coefficient_of_determination
 
 
 class CNNWeightedRegressionTraining(CNNBasicTraining):
@@ -95,8 +95,8 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
         loss = self.criterion(y_hat, y)
         self.log('valid_loss', loss)
 
-        valid_r2 = r2_score(y, y_hat)
-        self.log('valid_r2', valid_r2)
+        step_valid_pearson_r2 = pearson_r2_score(y, y_hat)
+        self.log('step_valid_pearson_r2', step_valid_pearson_r2)
 
         pearsonr, mean_pearsonr = pearson_correlation(y_hat, y)
         self.log('valid_mean_pearson', mean_pearsonr)
@@ -108,7 +108,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
                 self.log(f'valid_pearson_squared_{cell_types[i]}', coeff ** 2)
 
         metric = self.categorical_mse(y_hat, y)
-        return {'loss': loss, 'metric': metric, 'preds': y_hat, 'labels': y, 'r2': valid_r2}
+        return {'loss': loss, 'metric': metric, 'preds': y_hat, 'labels': y, 'pearson_r2': step_valid_pearson_r2}
 
     def validation_epoch_end(self, val_step_outputs):
         arit_mean = torch.stack([batch['loss'] for batch in val_step_outputs], dim=0).mean()
@@ -120,7 +120,8 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
         _, specificity_mean_spearman = spearman_correlation(shannon_pred, shannon_label)
-        r2_val_score = r2_score(epoch_labels, epoch_preds)
+        val_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
+        val_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
 
         metrics = {
             'current_epoch': self.current_epoch,
@@ -128,15 +129,59 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
             'harmonic_mean_loss': harm_mean,
             'prediction_mean_spearman': mean_spearman.item(),
             'entropy_spearman': specificity_mean_spearman.item(),
-            'val_r2_score': r2_val_score,
+            'epoch_end_val_pearson_r2': val_pearson_r2,
+            'epoch_end_val_cod_r2': val_cod_r2,
+            # Normalized summary keys shared with CNNBasicTraining so that
+            # `train_wandb_log.build_provenance_record` can read a single set
+            # of keys regardless of which graph module ran the training.
+            'val_pearson_r2': val_pearson_r2,
+            'val_cod_r2': val_cod_r2,
+            'val_loss': arit_mean,
+            'val_pearson': pearson_correlation(epoch_preds, epoch_labels)[1].item(),
+            'val_spearman': mean_spearman.item(),
         }
         self.aug_log(external_metrics=metrics)
         return None
 
     def test_step(self, batch, batch_idx):
+        """
+        Unpack the optional barcode weight and mirror `validation_step`. The
+        weighted loss is only applied at train time; test metrics use the
+        unweighted criterion so they are directly comparable across
+        basic/weighted training regimes.
+        """
         x, y, _ = self._unpack_batch(batch)
-        y_pred = self(x)
-        y_pred, y = self._align_shapes(y_pred, y)
-        loss = self.criterion(y_pred, y)
-        self.log('test_loss', loss)
-        return loss
+        y_hat = self(x)
+        y_hat, y = self._align_shapes(y_hat, y)
+        loss = self.criterion(y_hat, y)
+        self.log('step_test_loss', loss, on_epoch=True)
+        return {'loss': loss.detach(), 'preds': y_hat.detach(), 'labels': y.detach()}
+
+    def test_epoch_end(self, test_step_outputs):
+        """
+        Same aggregation contract as `CNNBasicTraining.test_epoch_end`: log
+        test_loss / test_pearson_r2 / test_cod_r2 / test_pearson /
+        test_spearman to W&B summary so `runs.csv` can persist final
+        held-out metrics.
+        """
+        if not test_step_outputs:
+            return None
+
+        loss = torch.stack([b['loss'] for b in test_step_outputs], dim=0).mean()
+        epoch_preds = torch.cat([b['preds'] for b in test_step_outputs], dim=0)
+        epoch_labels = torch.cat([b['labels'] for b in test_step_outputs], dim=0)
+
+        test_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
+        test_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
+        _, mean_pearson = pearson_correlation(epoch_preds, epoch_labels)
+        _, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
+
+        on_epoch = True
+        self.log('test_loss', loss, on_epoch=on_epoch)
+        self.log('test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
+        self.log('test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
+        self.log('test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
+        self.log('epoch_end_test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
+        self.log('epoch_end_test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        return None

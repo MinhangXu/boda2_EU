@@ -24,7 +24,7 @@ if [[ ! -f "${DERIVED_DATASET}" || "${FORCE_REBUILD_DATASET:-0}" == "1" ]]; then
 fi
 
 # path of the yml config file 
-CONFIG_PATH="configs/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml"
+CONFIG_PATH="configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml"
 TASK_FAMILY="enhancer"
 TARGET_FAMILY="malinois_mpra"
 COMPARISON_GROUP="enhancer__malinois_mpra__single_head_combined__basset_nonbranched"

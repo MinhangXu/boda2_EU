@@ -1,7 +1,9 @@
 program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: enhancer__malinois_mpra__single_head_k562__basset_nonbranched
 method: bayes
 metric:
-  name: epoch_end_val_r2
+  name: epoch_end_val_pearson_r2
   goal: maximize
 parameters:
   # Data module parameters
@@ -143,7 +145,7 @@ parameters:
 
   # Trainer/Checkpoint parameters
   checkpoint_monitor:
-    value: "epoch_end_val_r2"
+    value: "epoch_end_val_pearson_r2"
   stopping_mode:
     value: "max"
   stopping_patience:
@@ -167,6 +169,6 @@ parameters:
   logger_type:
     value: "wandb"
   logger_project:
-    value: "enhancer_malinois_single_head"
+    value: "enhancer__malinois_mpra__single_head_k562__basset_nonbranched"
   run_name:
     value: "enhancer_nonbranched_k562_{runid}"

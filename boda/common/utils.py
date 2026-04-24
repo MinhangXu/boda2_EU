@@ -140,8 +140,12 @@ def dna2tensor(sequence_str, vocab_list=constants.STANDARD_NT):
         torch.Tensor: One-hot encoded tensor representation of the sequence.
     """
     seq_tensor = np.zeros((len(vocab_list), len(sequence_str)))
+    vocab_lookup = {letter: idx for idx, letter in enumerate(vocab_list)}
     for letterIdx, letter in enumerate(sequence_str):
-        seq_tensor[vocab_list.index(letter), letterIdx] = 1
+        vocab_idx = vocab_lookup.get(letter)
+        if vocab_idx is None:
+            continue
+        seq_tensor[vocab_idx, letterIdx] = 1
     seq_tensor = torch.Tensor(seq_tensor)
     return seq_tensor
     
@@ -313,8 +317,14 @@ def row_dna2tensor(row, in_column_name='padded_seq' , vocab=constants.STANDARD_N
         torch.Tensor: One-hot encoded tensor representation of the sequence.
     """
     sequence_str = row[in_column_name]
-    seq_idxs = torch.tensor([vocab.index(letter) for letter in sequence_str])
-    sequence_tensor = F.one_hot(seq_idxs, num_classes=4).transpose(1,0)
+    vocab_lookup = {letter: idx for idx, letter in enumerate(vocab)}
+    seq_tensor = torch.zeros((len(vocab), len(sequence_str)), dtype=torch.float32)
+    for letter_idx, letter in enumerate(sequence_str):
+        vocab_idx = vocab_lookup.get(letter)
+        if vocab_idx is None:
+            continue
+        seq_tensor[vocab_idx, letter_idx] = 1.0
+    sequence_tensor = seq_tensor
     return sequence_tensor.type(torch.float32)
 
 def generate_all_onehots(k=4, num_classes=4):

@@ -81,7 +81,7 @@ This script is the focused entry point when the main interest is the weighted-lo
 
 - `program: train_wandb_log.py`
 - `method: bayes`
-- optimization target: `epoch_end_val_r2`
+- optimization target: `epoch_end_val_pearson_r2`
 - `graph_module: CNNBasicTraining`
 - `loss_criterion: MSELoss`
 - `barcode_weighting: false`
@@ -111,7 +111,7 @@ So the basic config is the unweighted scratch baseline.
 
 `lib1_enhancer__scratch_weighted__bayes.yml` keeps the same overall sweep structure, but changes the training graph and enables barcode weighting:
 
-- optimization target: `val_r2_score`
+- optimization target: `epoch_end_val_pearson_r2`
 - `graph_module: CNNWeightedRegressionTraining`
 - `barcode_weighting: true`
 - `barcode_weight_cap: [8.0, 10.0, 15.0]`

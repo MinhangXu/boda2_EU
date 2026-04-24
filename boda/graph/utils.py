@@ -8,6 +8,22 @@ from torch import nn
 
 from ..common import utils as cutils
 
+def normalize_scheduler_name(scheduler_name):
+    """
+    Normalize optional scheduler values coming from CLI / W&B sweeps.
+
+    W&B categorical configs often serialize "no scheduler" as the literal
+    string "None". Treat that the same as Python ``None`` so parser setup and
+    downstream optimizer configuration do not fail on otherwise valid sweeps.
+    """
+    if scheduler_name is None:
+        return None
+    if isinstance(scheduler_name, str):
+        scheduler_name = scheduler_name.strip()
+        if scheduler_name == "" or scheduler_name.lower() in {"none", "null"}:
+            return None
+    return scheduler_name
+
 def add_optimizer_specific_args(parser, optimizer_name):
     """
     Add optimizer-specific arguments to the argument parser.
@@ -102,6 +118,7 @@ def add_scheduler_specific_args(parser, scheduler_name):
     Raises:
         RuntimeError: If the provided scheduler_name is not supported.
     """
+    scheduler_name = normalize_scheduler_name(scheduler_name)
     if scheduler_name is not None:
         group = parser.add_argument_group('LR Scheduler args')
     if scheduler_name == 'StepLR':
@@ -195,6 +212,8 @@ def reorg_scheduler_args(sched_arg_dict):
     Returns:
         dict: Reorganized scheduler argument dictionary.
     """
+    if sched_arg_dict is None:
+        return None
     if 'scheduler_mode' in sched_arg_dict.keys():
         sched_arg_dict['mode'] = sched_arg_dict['scheduler_mode']
         sched_arg_dict.pop('scheduler_mode')
@@ -281,11 +300,46 @@ def shannon_entropy(x):
     return torch.sum(- p_c * torch.log(p_c), axis=1)
 
 
+def pearson_r2_score(y_true, y_pred):
+    """
+    Historical "R2" used across this repo: square of Pearson's correlation
+    after flattening all outputs.
+    """
+    y_true = y_true.cpu().detach().numpy().flatten()
+    y_pred = y_pred.cpu().detach().numpy().flatten()
+    if y_true.size < 2 or y_pred.size < 2:
+        return 0.0
+    corr_matrix = np.corrcoef(y_true, y_pred)
+    corr = corr_matrix[0, 1]
+    if np.isnan(corr):
+        return 0.0
+    return float(corr ** 2)
+
+
+def coefficient_of_determination(y_true, y_pred):
+    """
+    Standard regression R^2 (coefficient of determination) after flattening
+    all outputs.
+    """
+    y_true = y_true.cpu().detach().numpy().flatten()
+    y_pred = y_pred.cpu().detach().numpy().flatten()
+    if y_true.size == 0:
+        return 0.0
+    residual = y_true - y_pred
+    ss_res = np.sum(residual ** 2)
+    centered = y_true - np.mean(y_true)
+    ss_tot = np.sum(centered ** 2)
+    if ss_tot <= 1e-12:
+        return 1.0 if ss_res <= 1e-12 else 0.0
+    return float(1.0 - (ss_res / ss_tot))
+
+
 def r2_score(y_true, y_pred):
-    y_true = y_true.cpu().detach().numpy()
-    y_pred = y_pred.cpu().detach().numpy()
-    corr_matrix = np.corrcoef(y_true.flatten(), y_pred.flatten())
-    return corr_matrix[0, 1] ** 2
+    """
+    Backward-compatible alias for the historical squared-Pearson metric.
+    Prefer `pearson_r2_score` in new code so the semantics stay explicit.
+    """
+    return pearson_r2_score(y_true, y_pred)
 
 def _get_ranks(x):
     """

@@ -2,10 +2,18 @@
 /data/
 /artifacts/
 
+# Local agent/editor state
+.codex
+**/.codex
+
 # Directories at any level
 __pycache__/
 lightning_logs/
 .ipynb_checkpoints/
+/wandb/
+/src/wandb/
+/src/learn/wandb/
+/src/finetune/wandb/
 
 # Compiled python modules.
 *.pyc
@@ -16,6 +24,19 @@ lightning_logs/
 *.gz
 *.hdf5
 *.h5
+*.pkl
+*.pickle
+*.parquet
+*.ckpt
+*.log
+
+# Generated experiment state
+/src/learn/outputs/
+/src/learn/*__*/
+/src/finetune/cache/
+/src/finetune/analyses_cache*/
+/src/finetune/learning_curve/*/cache/
+/src/finetune/learning_curve/*/learning_curve_histories.csv
 
 # Data files, genomics
 *.fasta

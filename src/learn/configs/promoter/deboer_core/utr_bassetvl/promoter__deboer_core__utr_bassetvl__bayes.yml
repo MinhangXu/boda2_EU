@@ -1,9 +1,9 @@
 program: train_wandb_log.py
 entity: minhangxu1998-baylor-college-of-medicine
-project: boda2_EU-src_learn
+project: promoter__deboer_core__scratch__utr_bassetvl
 method: bayes
 metric:
-  name: epoch_end_val_r2
+  name: epoch_end_val_pearson_r2
   goal: maximize
 parameters:
   # Main arguments
@@ -14,7 +14,7 @@ parameters:
   graph_module:
     value: CNNBasicTraining
   checkpoint_monitor:
-    value: epoch_end_val_r2
+    value: epoch_end_val_pearson_r2
   stopping_mode:
     value: max
   stopping_patience:
@@ -22,7 +22,7 @@ parameters:
   logger_type:
     value: wandb
   logger_project:
-    value: promoter__deboer_core__utr_bassetvl
+    value: promoter__deboer_core__scratch__utr_bassetvl
   run_name: { value: "promoter_test_{runid}" }
   artifact_path:
     value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/promoter/deboer_core/utr_bassetvl/bayes

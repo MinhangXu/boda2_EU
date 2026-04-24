@@ -16,7 +16,8 @@ import hypertune
 
 from ..common import utils
 from .utils import (add_optimizer_specific_args, add_scheduler_specific_args, reorg_optimizer_args, reorg_scheduler_args,
-                    filter_state_dict, pearson_correlation, spearman_correlation, shannon_entropy, r2_score)
+                    normalize_scheduler_name, filter_state_dict, pearson_correlation, spearman_correlation,
+                    shannon_entropy, pearson_r2_score, coefficient_of_determination)
 
 class CNNBasicTraining(LightningModule):
     """
@@ -83,6 +84,7 @@ class CNNBasicTraining(LightningModule):
             Namespace: Processed arguments.
         """
         graph_args   = grouped_args['Graph Module args']
+        graph_args.scheduler = normalize_scheduler_name(graph_args.scheduler)
         graph_args.optimizer_args = vars(grouped_args['Optimizer args'])
         graph_args.optimizer_args = reorg_optimizer_args(graph_args.optimizer_args)
         try:
@@ -193,9 +195,12 @@ class CNNBasicTraining(LightningModule):
         print(f'Found {sum(p.numel() for p in params)} parameters')
         optim_class = getattr(torch.optim,self.optimizer)
         my_optimizer= optim_class(self.parameters(), **self.optimizer_args)
-        if self.scheduler is not None:
+        scheduler_name = normalize_scheduler_name(self.scheduler)
+        if scheduler_name is not None:
             sch_dict = {
-                'scheduler': getattr(torch.optim.lr_scheduler,self.scheduler)(my_optimizer, **self.scheduler_args), 
+                'scheduler': getattr(torch.optim.lr_scheduler, scheduler_name)(
+                    my_optimizer, **(self.scheduler_args or {})
+                ),
                 'interval': self.scheduler_interval, 
                 'name': 'learning_rate'
             }
@@ -251,11 +256,9 @@ class CNNBasicTraining(LightningModule):
         # Compatibility alias for older sweeps that monitor `valid_loss`
         self.log('valid_loss', loss)
 
-        # R2 score
-        r2 = r2_score(y_hat, y)
-        self.log('step_valid_r2', r2)
-        # Compatibility alias for older runs expecting `valid_r2`
-        self.log('valid_r2', r2)
+        # Historical repo "R2" is Pearson's r squared; log it explicitly.
+        step_valid_pearson_r2 = pearson_r2_score(y, y_hat)
+        self.log('step_valid_pearson_r2', step_valid_pearson_r2)
 
         # Pearson correlation
         pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y) 
@@ -291,8 +294,9 @@ class CNNBasicTraining(LightningModule):
         epoch_preds = torch.cat([batch['preds'] for batch in val_step_outputs], dim=0)
         epoch_labels  = torch.cat([batch['labels'] for batch in val_step_outputs], dim=0)
 
-        # Compute R² score
-        r2_val_score = r2_score(epoch_labels, epoch_preds)
+        # Track both historical Pearson^2 and standard coefficient of determination.
+        val_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
+        val_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
 
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
@@ -309,13 +313,20 @@ class CNNBasicTraining(LightningModule):
         '''
         # Log with epoch as x-axis
         on_epoch = True  # This ensures metrics are logged per epoch
-        self.log('epoch_end_val_r2', r2_val_score, on_epoch=on_epoch)
-        # Compatibility alias for older checkpoints/early stopping monitors
-        self.log('val_r2_score', r2_val_score, on_epoch=on_epoch)
+        self.log('epoch_end_val_pearson_r2', val_pearson_r2, on_epoch=on_epoch)
+        self.log('epoch_end_val_cod_r2', val_cod_r2, on_epoch=on_epoch)
         self.log('arithmetic_mean_loss', arit_mean, on_epoch=on_epoch)
         self.log('harmonic_mean_loss', harm_mean, on_epoch=on_epoch) 
         self.log('prediction_mean_spearman', mean_spearman.item(), on_epoch=on_epoch)
         self.log('entropy_spearman', specificity_mean_spearman.item(), on_epoch=on_epoch)
+
+        # Normalized summary keys consumed by `train_wandb_log.build_provenance_record`.
+        _, epoch_pearson = pearson_correlation(epoch_preds, epoch_labels)
+        self.log('val_pearson_r2', val_pearson_r2, on_epoch=on_epoch)
+        self.log('val_cod_r2', val_cod_r2, on_epoch=on_epoch)
+        self.log('val_loss', arit_mean, on_epoch=on_epoch)
+        self.log('val_pearson', epoch_pearson.item() if hasattr(epoch_pearson, 'item') else float(epoch_pearson), on_epoch=on_epoch)
+        self.log('val_spearman', mean_spearman.item(), on_epoch=on_epoch)
         
         # You can also explicitly log the epoch
         self.log('current_epoch', self.current_epoch, on_epoch=True)
@@ -324,16 +335,58 @@ class CNNBasicTraining(LightningModule):
     
     def test_step(self, batch, batch_idx):
         """
-        Test step implementation.
+        Test step. Mirrors `validation_step` so that `test_epoch_end` can
+        recover preds+labels and report R2 / Pearson / Spearman on top of the
+        per-batch loss — providing final held-out metrics for `runs.csv`.
 
         Args:
             batch: Batch of data.
             batch_idx (int): Batch index.
+
+        Returns:
+            dict: {'loss', 'preds', 'labels'} for aggregation.
         """
         x, y = batch
-        y_pred = self(x)
-        loss = self.criterion(y_pred, y)
-        self.log('test_loss', loss)       
+        y_hat = self(x)
+        if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
+            y_hat = y_hat.squeeze(1)
+        loss = self.criterion(y_hat, y)
+        self.log('step_test_loss', loss, on_epoch=True)
+        return {'loss': loss.detach(), 'preds': y_hat.detach(), 'labels': y.detach()}
+
+    def test_epoch_end(self, test_step_outputs):
+        """
+        Aggregate test-set predictions across batches and log R2 / Pearson /
+        Spearman / loss to the W&B run summary via `self.log(..., on_epoch=True)`.
+
+        Metric keys (`test_pearson_r2`, `test_cod_r2`, `test_pearson`,
+        `test_spearman`, `test_loss`) are consumed by
+        `train_wandb_log.build_provenance_record` and written to the run
+        summary / manifest layer.
+        """
+        if not test_step_outputs:
+            return None
+
+        loss = torch.stack([b['loss'] for b in test_step_outputs], dim=0).mean()
+        epoch_preds = torch.cat([b['preds'] for b in test_step_outputs], dim=0)
+        epoch_labels = torch.cat([b['labels'] for b in test_step_outputs], dim=0)
+
+        test_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
+        test_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
+        pearson_vals, mean_pearson = pearson_correlation(epoch_preds, epoch_labels)
+        spearman_vals, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
+
+        on_epoch = True
+        self.log('test_loss', loss, on_epoch=on_epoch)
+        self.log('test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
+        self.log('test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
+        self.log('test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
+        self.log('epoch_end_test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
+        self.log('epoch_end_test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('epoch_end_test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
+        self.log('epoch_end_test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
+        return None
 
 class CNNTransferLearning(CNNBasicTraining):
     """

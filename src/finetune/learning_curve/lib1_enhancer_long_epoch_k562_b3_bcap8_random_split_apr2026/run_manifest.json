@@ -1,0 +1,64 @@
+{
+  "data_path": "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt",
+  "model_path": "/home/minhang/synBio_AL/boda2_EU/tutorials/malinois_artifacts__20211113_021200__287348.tar.gz",
+  "outdir": "/home/minhang/synBio_AL/boda2_EU/src/finetune/learning_curve/lib1_enhancer_long_epoch_k562_b3_bcap8_random_split_apr2026",
+  "device": "auto",
+  "init_head": "K562",
+  "seeds": [
+    17,
+    23,
+    19,
+    31
+  ],
+  "split_seed": 7,
+  "val_frac": 0.15,
+  "test_frac": 0.15,
+  "train_thresholds": [
+    1
+  ],
+  "train_priority_min_barcodes": 4,
+  "train_size_fracs": [
+    0.05,
+    0.1,
+    0.2,
+    0.35,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "train_sampling_mode": "random",
+  "min_train_size": 32,
+  "unfreeze_scopes": [
+    "branched_only",
+    "conv3_plus",
+    "full"
+  ],
+  "b3_bcap": 8.0,
+  "min_weight": 0.1,
+  "head_lr": 0.0001,
+  "backbone_lr": 2e-05,
+  "weight_decay": 0.0001,
+  "max_epochs": 800,
+  "patience": 300,
+  "frozen_epochs": 2,
+  "train_batch_size": 128,
+  "force": false,
+  "repo_root": "/home/minhang/synBio_AL/boda2_EU",
+  "device_resolved": "cuda",
+  "run_id": "20260405T043520Z_5c53f49c",
+  "run_started_at": "2026-04-05T04:35:20.849797+00:00",
+  "settings": [
+    {
+      "name": "B3_with_RC_weighted_bcap_8",
+      "use_rc_augmentation": true,
+      "use_barcode_weighting": true,
+      "b_cap": 8.0,
+      "min_weight": 0.1
+    }
+  ],
+  "split_strategy": "random_all_per_seed",
+  "split_strategy_description": "Per-seed random validation/test drawn from the full dataset, ignoring HQ restriction for split creation.",
+  "selected_head_idx": 0,
+  "per_epoch_test_metrics_logged": true,
+  "lr_selection_note": "Single LR pair used to avoid another sweep. Defaults (`head_lr=1e-4`, `backbone_lr=2e-5`) were chosen as a more conservative long-epoch follow-up from the stronger targeted April results."
+}

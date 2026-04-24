@@ -73,7 +73,7 @@ def main(args):
     """
     args_copy = copy.deepcopy(args)
     
-    params_module     = getattr(boda.generator.parameters, args['Main args'].params_module)
+    params_module    = getattr(boda.generator.parameters, args['Main args'].params_module)
     energy_module    = getattr(boda.generator.energy    , args['Main args'].energy_module)
     generator_module = getattr(boda.generator           , args['Main args'].generator_module)
     

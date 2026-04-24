@@ -1,6 +1,6 @@
 program: train_wandb_log.py
 entity: minhangxu1998-baylor-college-of-medicine
-project: boda2_EU-src_learn
+project: enhancer__malinois_mpra__transfer_baseline__basset_branched
 method: grid
 parameters:
   # Data module parameters
@@ -147,6 +147,6 @@ parameters:
   logger_type:
     value: "wandb"
   logger_project:
-    value: "boda_train"
+    value: "enhancer__malinois_mpra__transfer_baseline__basset_branched"
   run_name:
-    value: "fixed_run"
+    value: "enhancer_malinois_branched_transfer_{runid}"

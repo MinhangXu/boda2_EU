@@ -658,6 +658,7 @@ def train_single_head_model(
     weight_decay: float,
     test_df: pd.DataFrame | None = None,
     log_test_metrics_per_epoch: bool = False,
+    log_train_metrics_per_epoch: bool = False,
 ) -> tuple[BassetBranched, pd.DataFrame, dict[str, Any]]:
     set_global_seed(training_seed)
     model = build_single_head_model(checkpoint, head_idx=head_idx, device=device)
@@ -681,6 +682,14 @@ def train_single_head_model(
         weight_column="sample_weight" if setting.use_barcode_weighting else None,
         seed=training_seed,
     )
+    train_eval_loader = None
+    if log_train_metrics_per_epoch:
+        train_eval_loader = make_loader(
+            train_df,
+            target_column="target_standardized",
+            batch_size=PRED_BATCH_SIZE,
+            shuffle=False,
+        )
     val_loader = make_loader(val_df, target_column="target_standardized", batch_size=PRED_BATCH_SIZE, shuffle=False)
     test_loader = None
     if log_test_metrics_per_epoch:
@@ -746,6 +755,16 @@ def train_single_head_model(
             train_items += len(x_batch)
 
         train_loss = train_loss_sum / max(train_items, 1)
+        train_history_metrics: dict[str, float] = {}
+        if train_eval_loader is not None:
+            train_pred_std, train_true_std = predict_model(model, train_eval_loader, device=device)
+            train_pred_std = train_pred_std.reshape(-1)
+            train_true_std = train_true_std.reshape(-1)
+            train_metrics = compute_regression_metrics(scaler.inverse(train_true_std), scaler.inverse(train_pred_std))
+            train_history_metrics = {
+                "train_eval_loss_standardized": float(np.mean((train_pred_std - train_true_std) ** 2)),
+                **{f"train_{k}": v for k, v in train_metrics.items()},
+            }
         val_pred_std, val_true_std = predict_model(model, val_loader, device=device)
         val_pred_std = val_pred_std.reshape(-1)
         val_true_std = val_true_std.reshape(-1)
@@ -766,6 +785,7 @@ def train_single_head_model(
         history_row = {
             "epoch": epoch,
             "train_loss_standardized": train_loss,
+            **train_history_metrics,
             "val_loss_standardized": val_loss,
             "trainable_params": trainable_now,
             "total_params": total_params,

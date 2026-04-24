@@ -1,9 +1,9 @@
 program: train_wandb_log.py
 entity: minhangxu1998-baylor-college-of-medicine
-project: boda2_EU-src_learn
+project: utr5__polysome__fixed__utr_bassetvl
 method: grid
 metric:
-  name: epoch_end_val_r2
+  name: epoch_end_val_pearson_r2
   goal: maximize
 parameters:
   data_module:
@@ -87,7 +87,7 @@ parameters:
   beta2:
     value: 0.999
   checkpoint_monitor:
-    value: epoch_end_val_r2
+    value: epoch_end_val_pearson_r2
   stopping_mode:
     value: max
   stopping_patience:
@@ -113,6 +113,6 @@ parameters:
   logger_type:
     value: wandb
   logger_project:
-    value: utr5__polysome__utr_bassetvl
+    value: utr5__polysome__fixed__utr_bassetvl
   run_name:
     value: utr5_polysome__mcherry_1__fixed
