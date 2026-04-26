@@ -16,6 +16,7 @@ Current authored configs:
 - `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_k562__bayes.yml`
 - `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml`
 - `configs/promoter/deboer_core/utr_bassetvl/promoter__deboer_core__utr_bassetvl__bayes.yml`
+- `configs/promoter/deboer_core/utr_bassetvl/promoter__deboer_core__utr_bassetvl__focused_bayes.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_1.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_2.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__mcherry_1.yml`
@@ -25,8 +26,10 @@ Current authored configs:
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_1.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_2.yml`
 - `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__bayes.yml`
+- `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__focused_bayes.yml`
 - `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__bayes.yml`
 - `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__focused_bayes__2025-06-16.yml`
+- `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__focused_bayes_2026_04.yml`
 
 ## Naming Convention
 

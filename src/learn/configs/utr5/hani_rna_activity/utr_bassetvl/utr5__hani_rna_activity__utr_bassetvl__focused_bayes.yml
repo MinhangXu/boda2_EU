@@ -1,0 +1,149 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: utr5__hani_rna_activity__focused__utr_bassetvl
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+parameters:
+  # Main arguments
+  data_module:
+    value: UTR5_RNA_Activity_DataModule
+  model_module:
+    value: UTR_BassetVL
+  graph_module:
+    value: CNNBasicTraining
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 40
+  logger_type:
+    value: wandb
+  logger_project:
+    value: utr5__hani_rna_activity__focused__utr_bassetvl
+  run_name:
+    value: "utr5_focused_202604_{runid}"
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr5/hani_rna_activity/utr_bassetvl/focused_bayes
+  best_checkpoint_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/utr5__hani_rna_activity__focused__utr_bassetvl/best_checkpoint_model
+
+  # Data module parameters
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/utr_hani_2025/processed_utr_data/5UTR_lib1_processed.csv
+  sequence_column:
+    value: seq
+  activity_column:
+    value: rna_activity
+  fold_column:
+    value: fold
+  split_by_fold:
+    value: True
+  target_cell_type:
+    value: c2
+  normalize_activity:
+    value: True
+  use_reverse_complements:
+    value: False
+  batch_size:
+    value: 256
+  num_workers:
+    value: 8
+  seed:
+    value: 42
+
+  # Focused around the top UTR5 Hani models, with modest regularization room.
+  input_len:
+    value: 50
+  n_outputs:
+    value: 1
+  conv1_channels:
+    distribution: int_uniform
+    min: 120
+    max: 160
+  conv1_kernel_size:
+    distribution: categorical
+    values: [8, 10]
+  conv2_channels:
+    distribution: int_uniform
+    min: 100
+    max: 140
+  conv2_kernel_size:
+    distribution: categorical
+    values: [8, 10]
+  conv3_channels:
+    distribution: int_uniform
+    min: 110
+    max: 160
+  conv3_kernel_size:
+    distribution: categorical
+    values: [8, 10]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]
+  linear_channels:
+    distribution: int_uniform
+    min: 35
+    max: 70
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.20
+    max: 0.40
+  use_batch_norm:
+    value: True
+  use_weight_norm:
+    value: False
+  loss_criterion:
+    value: MSELoss
+
+  # Graph module parameters
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.0025
+    max: 0.008
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.008
+  beta1:
+    distribution: uniform
+    min: 0.85
+    max: 0.92
+  beta2:
+    distribution: uniform
+    min: 0.980
+    max: 0.990
+  amsgrad:
+    value: True
+  scheduler:
+    value: CosineAnnealingWarmRestarts
+  scheduler_interval:
+    value: step
+  T_0:
+    value: 2000
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+
+  # Lightning Trainer parameters
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  min_epochs:
+    value: 30
+  max_epochs:
+    value: 300
+  precision:
+    value: 16
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr5/hani_rna_activity/utr_bassetvl/focused_bayes

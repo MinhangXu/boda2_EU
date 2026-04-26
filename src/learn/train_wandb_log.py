@@ -413,6 +413,94 @@ def set_best(my_model, callbacks):
             print('Setting most recent model', file=sys.stderr)
     return my_model
 
+
+def publish_best_checkpoint_model(local_dir, final_artifact_path, provenance_record,
+                                  use_callbacks=None, args=None):
+    """
+    Optionally publish each run's best model bundle to a cleaner per-project
+    directory for human browsing and downstream handoff.
+
+    The full archive in `local_artifacts` remains the canonical portable
+    artifact. This publisher mirrors the useful pieces into:
+
+        <best_checkpoint_dir>/<run_id>/
+
+    so the noisy Lightning/W&B run directories do not need to be the first
+    place humans look.
+    """
+    if args is None:
+        return None
+
+    main_args = args.get('Main args')
+    publish_root = getattr(main_args, 'best_checkpoint_dir', None)
+    if not publish_root:
+        return None
+
+    publish_root = os.path.abspath(os.path.expanduser(publish_root))
+    run_id = provenance_record.get('run_id') or f"norun_{time.strftime('%Y%m%d_%H%M%S')}"
+    publish_dir = os.path.join(publish_root, run_id)
+    os.makedirs(publish_dir, exist_ok=True)
+
+    copied_files = {}
+
+    def _copy_if_exists(src, dest_name):
+        if not src or not os.path.isfile(src):
+            return
+        dest = os.path.join(publish_dir, dest_name)
+        shutil.copy2(src, dest)
+        copied_files[dest_name] = dest
+
+    _copy_if_exists(os.path.join(local_dir, 'torch_checkpoint.pt'), 'torch_checkpoint.pt')
+    _copy_if_exists(final_artifact_path, 'model_artifacts.tar.gz')
+
+    best_model_path = ""
+    mc = use_callbacks.get('model_checkpoint') if use_callbacks else None
+    if mc is not None:
+        best_model_path = getattr(mc, 'best_model_path', "") or ""
+        if best_model_path.startswith('gs://'):
+            # Avoid implicit network copies in the publisher. The canonical
+            # tarball already contains the best weights via torch_checkpoint.pt.
+            best_model_path = ""
+    _copy_if_exists(best_model_path, 'lightning_best.ckpt')
+
+    published_provenance = dict(provenance_record)
+    if final_artifact_path:
+        published_provenance['artifact_path'] = final_artifact_path
+    with open(os.path.join(publish_dir, 'provenance.json'), 'w') as fh:
+        json.dump(published_provenance, fh, indent=2, default=str)
+
+    selection = {
+        'run_id': run_id,
+        'wandb_project': provenance_record.get('wandb_project', ''),
+        'task_family': provenance_record.get('task_family', ''),
+        'target_family': provenance_record.get('target_family', ''),
+        'metric_name': provenance_record.get('best_metric_name', ''),
+        'metric_value': provenance_record.get('best_metric_value', ''),
+        'best_epoch': provenance_record.get('best_epoch', ''),
+        'source_lightning_checkpoint': best_model_path,
+        'source_artifact_path': final_artifact_path or '',
+        'copied_files': copied_files,
+    }
+    with open(os.path.join(publish_dir, 'selection.json'), 'w') as fh:
+        json.dump(selection, fh, indent=2, default=str)
+
+    latest_link = os.path.join(publish_root, 'latest')
+    try:
+        if os.path.islink(latest_link) or os.path.isfile(latest_link):
+            os.unlink(latest_link)
+        if not os.path.exists(latest_link):
+            os.symlink(run_id, latest_link)
+    except Exception:
+        with open(os.path.join(publish_root, 'latest_run.txt'), 'w') as fh:
+            fh.write(f"{run_id}\n")
+
+    print(f"Published best checkpoint model to {publish_dir}")
+    if wandb.run is not None:
+        wandb.run.summary["best_checkpoint_publish_dir"] = publish_dir
+
+    return publish_dir
+
+
 def save_model(data_module, model_module, graph_module, model, trainer, args,
                use_callbacks=None, provenance_record=None):
     """
@@ -493,6 +581,14 @@ def save_model(data_module, model_module, graph_module, model, trainer, args,
             shutil.copy(tar_src, final_artifact_path)
 
     print(f"Model saved to {final_artifact_path}")
+
+    publish_best_checkpoint_model(
+        local_dir,
+        final_artifact_path,
+        provenance_record,
+        use_callbacks=use_callbacks or {},
+        args=args,
+    )
 
     if wandb.run is not None:
         wandb.run.summary["model_saved_path"] = final_artifact_path
@@ -807,6 +903,8 @@ if __name__ == '__main__':
                        help='BODA graph module to define computations.')
     group.add_argument('--artifact_path', type=str, default='/opt/ml/checkpoints/',
                        help='Path where model artifacts are deposited.')
+    group.add_argument('--best_checkpoint_dir', type=str, default='',
+                       help='Optional clean directory where each run publishes its best model bundle under <run_id>/.')
     group.add_argument('--pretrained_weights', type=str, help='Pretrained weights.')
     group.add_argument('--checkpoint_monitor', type=str,
                        help='String to monitor PTL logs if saving best.')

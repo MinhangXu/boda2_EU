@@ -63,6 +63,11 @@ cd /home/minhang/synBio_AL/boda2_EU/src/learn
 GPU_POOL="0 1 2 3 4 5 6 7" bash launch/run_public_datasets_hpo_batch.sh
 ```
 
+```bash
+cd /home/minhang/synBio_AL/boda2_EU/src/learn
+GPU_POOL="1 2 3" NUM_RUNS=12 bash launch/run_public_datasets_focused_hpo_batch.sh
+```
+
 If `SWEEP_ID` is already known, set it before launching agents. Use:
 
 - the full sweep path: `entity/project/sweep_id`
@@ -84,6 +89,8 @@ Sweep identity note:
 - `promoter_deboer_utr_bassetvl_sweep.sh`
 - `run_public_datasets_hpo_batch.sh` — launches the current promoter/UTR
   HPO batch across multiple GPUs, optionally in detached `screen` sessions
+- `run_public_datasets_focused_hpo_batch.sh` — launches focused second-stage
+  promoter/UTR HPO sweeps across available GPUs
 - `utr3_hani_utr_bassetvl_sweep.sh`
 - `utr5_hani_utr_bassetvl_sweep.sh`
 - `utr5_polysome_utr_bassetvl_sweep.sh`

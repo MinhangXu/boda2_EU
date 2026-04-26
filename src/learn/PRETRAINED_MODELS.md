@@ -35,6 +35,30 @@ Both registries live under `src/learn/run_registry/`:
 5. `append_runs_csv_row` appends one row to `run_registry/runs.csv` (or
    the path in `BODA_RUNS_CSV`) with the same provenance dict.
 
+## Artifact and checkpoint layout
+
+There are three related outputs, with different jobs:
+
+| Location | What it is | When to use it |
+| --- | --- | --- |
+| `local_artifacts/**/*.tar.gz` | Portable model bundle written after the best checkpoint is restored. Contains `artifacts/torch_checkpoint.pt` and `artifacts/provenance.json`. | Default source for transfer learning, inference, and registry promotion. |
+| `<wandb_project>/<run_id>/checkpoints/*.ckpt` | Raw PyTorch Lightning checkpoint produced during training. | Resume/debug a Lightning training run, inspect callback state, or recover when artifact export failed. |
+| `<wandb_project>/best_checkpoint_model/<run_id>/` | Optional clean mirror for humans, enabled by `--best_checkpoint_dir`. Contains the portable checkpoint plus provenance and selection metadata, and copies `lightning_best.ckpt` when local. | Quick browsing and handoff without hunting through long artifact names or raw run folders. |
+
+The `.ckpt` files are useful, but they are not the main pretrained-model
+handoff format. `train_wandb_log.py` calls `set_best` before `save_model`,
+so the `torch_checkpoint.pt` inside each saved artifact already contains
+the best-checkpoint model weights rather than the final epoch by accident.
+
+For downstream code, prefer:
+
+```text
+run_registry/best_runs.csv -> model_saved_path/artifact_path -> local_artifacts/*.tar.gz
+```
+
+The `best_checkpoint_model/` directory is just a predictable browsing layer.
+It does not replace `local_artifacts/` or the registry.
+
 ## Promoting a run to the "best" list
 
 1. Inspect `runs.csv` (or the W&B UI) to pick the winning run per region.
