@@ -13,6 +13,8 @@ The layout is:
 Current authored configs:
 
 - `configs/enhancer/malinois_mpra/basset_branched/enhancer__malinois_mpra__basset_branched__transfer_baseline.yml`
+- `configs/enhancer/bashor_in_house/lib1_enhancer_fastqs1_5__scratch_basic__bayes.yml`
+- `configs/enhancer/bashor_in_house/lib1_enhancer_fastqs1_5__scratch_weighted__bayes.yml`
 - `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_k562__bayes.yml`
 - `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml`
 - `configs/promoter/deboer_core/utr_bassetvl/promoter__deboer_core__utr_bassetvl__bayes.yml`
@@ -27,6 +29,7 @@ Current authored configs:
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_2.yml`
 - `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__bayes.yml`
 - `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__focused_bayes.yml`
+- `configs/utr5/hani_rna_activity/resnet1d/utr5__hani_rna_activity_lib1_lib2__resnet1d__phase3_scratch_bayes.yml`
 - `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__bayes.yml`
 - `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__focused_bayes__2025-06-16.yml`
 - `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__focused_bayes_2026_04.yml`
@@ -69,3 +72,9 @@ The preferred enhancer single-head path is currently the combined pan-cell targe
 - `combined_activity_zmean`
 - derived from `K562_mean`, `HepG2_mean`, and `SKNSH_mean`
 - built by `src/learn/prepare_enhancer_single_head_dataset.py`
+
+Phase 3 Hani 5'UTR Lib1+Lib2 scratch HPO intentionally keeps the combined
+target family in the filename/project name (`hani_rna_activity_lib1_lib2`) so
+Lib1-only and Lib1+Lib2 production-pretraining branches do not share a W&B
+bucket. Its derived input table is built by
+`src/learn/prepare_hani_utr5_lib1_lib2_phase3_dataset.py`.

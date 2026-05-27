@@ -1,0 +1,162 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: utr5__hani_rna_activity__delta_aux__basset_branched
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+parameters:
+  data_module:
+    value: UTR5_Branched_RNA_Activity_DataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/utr_hani_2025/processed_utr_data/5UTR_lib1_branched_observed_heads_with_deltas.csv
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr5/hani_rna_activity/basset_branched/delta_aux_bayes
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr5/hani_rna_activity/basset_branched/delta_aux_bayes
+  logger_project:
+    value: utr5__hani_rna_activity__delta_aux__basset_branched
+  logger_type:
+    value: wandb
+  run_name:
+    value: utr5_hani_basset_branched_delta_aux_{runid}
+  sequence_column:
+    value: seq
+  activity_columns:
+    value: [c1, c2, c4, c6, c17, delta_c1, delta_c2, delta_c4, delta_c6, delta_c17]
+  output_names:
+    value: [c1, c2, c4, c6, c17, delta_c1, delta_c2, delta_c4, delta_c6, delta_c17]
+  fold_column:
+    value: fold
+  split_by_fold:
+    value: True
+  normalize_activity:
+    value: True
+
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 16
+  max_epochs:
+    value: 240
+  min_epochs:
+    value: 25
+  stopping_patience:
+    value: 40
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: BassetBranched
+  input_len:
+    value: 50
+  n_outputs:
+    value: 10
+  conv1_channels:
+    distribution: int_uniform
+    min: 72
+    max: 220
+  conv1_kernel_size:
+    distribution: categorical
+    values: [5, 7, 11]
+  conv2_channels:
+    distribution: int_uniform
+    min: 96
+    max: 220
+  conv2_kernel_size:
+    distribution: categorical
+    values: [5, 7, 9]
+  conv3_channels:
+    distribution: int_uniform
+    min: 72
+    max: 200
+  conv3_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]
+  linear_channels:
+    distribution: int_uniform
+    min: 220
+    max: 650
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU, ELU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.08
+    max: 0.45
+  n_branched_layers:
+    distribution: categorical
+    values: [2, 3]
+  branched_channels:
+    distribution: int_uniform
+    min: 48
+    max: 190
+  branched_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU, ELU]
+  branched_dropout_p:
+    distribution: uniform
+    min: 0.06
+    max: 0.45
+  use_batch_norm:
+    value: False
+  use_weight_norm:
+    value: False
+
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+  lr:
+    distribution: log_uniform_values
+    min: 0.00004
+    max: 0.0018
+  beta1:
+    distribution: uniform
+    min: 0.86
+    max: 0.95
+  beta2:
+    distribution: uniform
+    min: 0.985
+    max: 0.999
+  amsgrad:
+    distribution: categorical
+    values: [True, False]
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.004
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  scheduler_interval:
+    value: step
+  T_0:
+    distribution: categorical
+    values: [1000, 2000, 4000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+
+  batch_size:
+    distribution: categorical
+    values: [256, 512]
+  num_workers:
+    value: 8
+  use_reverse_complements:
+    value: False
+  seed:
+    value: 42

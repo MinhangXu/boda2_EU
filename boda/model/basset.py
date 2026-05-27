@@ -1392,17 +1392,15 @@ class BassetBranched(ptl.LightningModule):
                          (**self.loss_args)
     
     def get_flatten_factor(self, input_len):
-        
-        
-        
         hook = input_len
-        assert hook % 3 == 0
         hook = hook // 3
-        assert hook % 4 == 0
         hook = hook // 4
-        assert (hook + 2) % 4 == 0
-        
-        return (hook + 2) // 4
+        hook = (hook + 2) // 4
+        if hook <= 0:
+            raise ValueError(
+                f"input_len={input_len} is too short for the BassetBranched pooling stack"
+            )
+        return hook
     
     ######################
     # Model computations #

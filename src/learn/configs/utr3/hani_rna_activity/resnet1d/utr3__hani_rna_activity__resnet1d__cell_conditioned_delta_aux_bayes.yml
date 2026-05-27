@@ -1,0 +1,143 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: utr3__hani_rna_activity__cell_conditioned_delta_aux__resnet1d
+method: bayes
+metric:
+  name: val_pearson_delta
+  goal: maximize
+parameters:
+  data_module:
+    value: UTR3_CellConditioned_RNA_Activity_DataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/utr_hani_2025/processed_utr_data/3UTR_lib1_branched_observed_heads_with_deltas.csv
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr3/hani_rna_activity/resnet1d/cell_conditioned_delta_aux_bayes
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr3/hani_rna_activity/resnet1d/cell_conditioned_delta_aux_bayes
+  logger_project:
+    value: utr3__hani_rna_activity__cell_conditioned_delta_aux__resnet1d
+  logger_type:
+    value: wandb
+  run_name:
+    value: utr3_hani_resnet1d_cell_delta_{runid}
+  sequence_column:
+    value: seq
+  activity_columns:
+    value: [c1, c2, c4, c6, c13, c17]
+  delta_columns:
+    value: [delta_c1, delta_c2, delta_c4, delta_c6, delta_c13, delta_c17]
+  cell_type_order:
+    value: [c1, c2, c4, c6, c13, c17]
+  target_columns:
+    value: [delta, activity]
+  condition_features:
+    value: [sequence, positional, conditions]
+  fold_column:
+    value: fold
+  split_by_fold:
+    value: True
+  normalize_activity:
+    value: True
+
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 16
+  max_epochs:
+    value: 40
+  min_epochs:
+    value: 8
+  stopping_patience:
+    value: 12
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: val_pearson_delta
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: ResNet1DRegressor
+  input_len:
+    value: 240
+  input_channels:
+    value: 11
+  n_outputs:
+    value: 2
+  output_names:
+    value: [delta, activity]
+  stem_channels:
+    distribution: int_uniform
+    min: 64
+    max: 192
+  stem_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7]
+  block_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7]
+  dropout_p:
+    distribution: uniform
+    min: 0.05
+    max: 0.32
+  head_hidden_channels:
+    distribution: int_uniform
+    min: 96
+    max: 384
+  use_batch_norm:
+    value: True
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+
+  optimizer:
+    value: AdamW
+  lr:
+    value: 0.001
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.003
+    max: 0.20
+  amsgrad:
+    value: False
+  beta1:
+    value: 0.9
+  beta2:
+    value: 0.999
+  scheduler:
+    value: OneCycleLR
+  scheduler_interval:
+    value: step
+  max_lr:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.02
+  epochs:
+    value: 40
+  steps_per_epoch:
+    value: 134
+  pct_start:
+    distribution: uniform
+    min: 0.20
+    max: 0.40
+  anneal_strategy:
+    value: cos
+  div_factor:
+    distribution: categorical
+    values: [10.0, 25.0, 50.0]
+  final_div_factor:
+    value: 10000.0
+  three_phase:
+    value: False
+
+  batch_size:
+    value: 1024
+  num_workers:
+    value: 8
+  use_reverse_complements:
+    value: False
+  seed:
+    value: 42

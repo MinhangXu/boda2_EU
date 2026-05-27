@@ -1,0 +1,126 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: utr3__hani_rna_activity__resnet1d_focused_stage2
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+parameters:
+  data_module:
+    value: UTR3_Branched_RNA_Activity_DataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/utr_hani_2025/processed_utr_data/3UTR_lib1_branched_observed_heads.csv
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr3/hani_rna_activity/resnet1d/focused_bayes
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr3/hani_rna_activity/resnet1d/focused_bayes
+  logger_project:
+    value: utr3__hani_rna_activity__resnet1d_focused_stage2
+  logger_type:
+    value: wandb
+  run_name:
+    value: utr3_hani_resnet1d_focus2_{runid}
+  sequence_column:
+    value: seq
+  activity_columns:
+    value: [c1, c2, c4, c6, c13, c17]
+  output_names:
+    value: [c1, c2, c4, c6, c13, c17]
+  fold_column:
+    value: fold
+  split_by_fold:
+    value: True
+  normalize_activity:
+    value: True
+
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 16
+  max_epochs:
+    value: 260
+  min_epochs:
+    value: 30
+  stopping_patience:
+    value: 55
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: ResNet1DRegressor
+  input_len:
+    value: 240
+  n_outputs:
+    value: 6
+  stem_channels:
+    distribution: int_uniform
+    min: 96
+    max: 192
+  stem_kernel_size:
+    value: 7
+  block_kernel_size:
+    distribution: categorical
+    values: [5, 7, 9, 11]
+  dropout_p:
+    distribution: uniform
+    min: 0.18
+    max: 0.38
+  head_hidden_channels:
+    distribution: int_uniform
+    min: 128
+    max: 384
+  use_batch_norm:
+    value: True
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+
+  optimizer:
+    value: AdamW
+  lr:
+    distribution: log_uniform_values
+    min: 0.0003
+    max: 0.0013
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.0008
+  amsgrad:
+    distribution: categorical
+    values: [True, False]
+  beta1:
+    distribution: uniform
+    min: 0.84
+    max: 0.92
+  beta2:
+    distribution: uniform
+    min: 0.985
+    max: 0.997
+  scheduler:
+    value: CosineAnnealingWarmRestarts
+  T_0:
+    distribution: categorical
+    values: [2000, 4000, 6000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+  scheduler_interval:
+    value: step
+
+  batch_size:
+    distribution: categorical
+    values: [256, 512]
+  num_workers:
+    value: 8
+  use_reverse_complements:
+    value: False
+  seed:
+    value: 42

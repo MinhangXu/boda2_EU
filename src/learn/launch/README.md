@@ -68,6 +68,11 @@ cd /home/minhang/synBio_AL/boda2_EU/src/learn
 GPU_POOL="1 2 3" NUM_RUNS=12 bash launch/run_public_datasets_focused_hpo_batch.sh
 ```
 
+```bash
+cd /home/minhang/synBio_AL/boda2_EU/src/learn
+MODE=basic GPU_LIST="1 2" NUM_AGENTS=2 NUM_RUNS=6 bash launch/lib1_enhancer_fastqs1_5_scratch_compare_loss_modes.sh
+```
+
 If `SWEEP_ID` is already known, set it before launching agents. Use:
 
 - the full sweep path: `entity/project/sweep_id`
@@ -83,6 +88,7 @@ Sweep identity note:
 
 - `enhancer_malinois_basset_branched_baseline.sh`
 - `enhancer_malinois_basset_nonbranched_single_head_combined_sweep.sh` (legacy config path)
+- `lib1_enhancer_fastqs1_5_scratch_compare_loss_modes.sh`
 - `lib1_enhancer_scratch_compare_loss_modes.sh`
 - `lib1_enhancer_scratch_weighted_sweep.sh`
 - `promoter_deboer_compare_architectures.sh`
@@ -92,6 +98,7 @@ Sweep identity note:
 - `run_public_datasets_focused_hpo_batch.sh` — launches focused second-stage
   promoter/UTR HPO sweeps across available GPUs
 - `utr3_hani_utr_bassetvl_sweep.sh`
+- `utr5_hani_lib1_lib2_resnet1d_phase3_scratch_sweep.sh`
 - `utr5_hani_utr_bassetvl_sweep.sh`
 - `utr5_polysome_utr_bassetvl_sweep.sh`
 - `utr5_polysome_fixed_all.sh`
@@ -115,6 +122,14 @@ Promoter architecture note:
   `LIBRARY=egfp_1|egfp_2|mcherry_1|mcherry_2`
 - use it for actual HPO / pilot-HPO runs
 - keep `utr5_polysome_fixed_all.sh` for fixed-parameter benchmark reruns
+
+Hani 5'UTR Phase 3 note:
+
+- `utr5_hani_lib1_lib2_resnet1d_phase3_scratch_sweep.sh` launches the
+  Lib1+Lib2 scratch ResNet1D HPO branch from the May 2026 PARADE/BODA plan
+- it builds `derived_data/utr5/hani_rna_activity/5UTR_lib1_lib2_phase3_branched_observed_heads.csv`
+  automatically when missing
+- set `FORCE_REBUILD_DATASET=1` to regenerate the table before launching
 
 Enhancer combined-target note:
 

@@ -155,7 +155,7 @@ Current problem:
 
 Recommended addition:
 
-- `plan/best_runs_snapshot.md` later, for human-readable summaries
+- `plan/learn/best_runs_snapshot.md` later, for human-readable summaries
 - `src/learn/run_registry/` or `metadata/run_registry/`
 - one CSV or YAML manifest with columns like:
   - `cre_part`
@@ -409,6 +409,28 @@ Realistically, because the output schema differs from the original three-cell-li
 3. evaluate a pretrained enhancer backbone as initialization, not necessarily as direct prediction
 4. compare transfer learning against training from scratch
 
+#### No-flank scratch comparison
+
+New comparison path:
+
+- config: `src/learn/configs/enhancer/bashor_in_house/lib1_enhancer_fastqs1_5__scratch_no_flank_basic__bayes.yml`
+- launcher: `src/learn/launch/lib1_enhancer_fastqs1_5_scratch_no_flank_sweep.sh`
+- source CSV: `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv`
+- learn-ready table: `src/learn/derived_data/enhancer/bashor_in_house/lib1_fastqs1_5_0filtered_out__learn_ready.tsv`
+
+Rationale:
+
+- the previous in-house enhancer scratch configs use `Lib1EnhancerDataModule` defaults, which pad short enhancer inserts to `600` bp with BODA/Malinois MPRA flanking sequence
+- the no-flank comparison uses the same learn-ready target table but sets `padding_mode: neutral`, `padded_seq_len: 216`, and `input_len: 216`
+- this is not literally variable-length training; the raw enhancer lengths vary, so fixed-length models still need a neutral tensor pad
+- neutral `N` bases encode as zeros, avoiding injected biological flank sequence while keeping BassetVL and ResNet shape-compatible
+
+Initial smoke check:
+
+- split sizes: train `3830`, val `479`, test `479`
+- batch shape: `[batch, 4, 216]`
+- `BassetVL(input_len=216)` and `ResNet1DRegressor(input_len=216)` both forward successfully
+
 ## 5'UTR Task Split
 
 This split should become explicit in the repo and docs.
@@ -443,6 +465,58 @@ Why it matters:
 
 - this is the cleaner modern workflow
 - but it should not overwrite or replace the older polysome benchmark in planning documents
+
+### Hani observed-head branched Lib1 update
+
+Status as of 2026-05-04:
+
+- implemented observed-head wide Lib1 preprocessing for branched Hani UTR models
+- implemented `UTR3_Branched_RNA_Activity_DataModule` and `UTR5_Branched_RNA_Activity_DataModule`
+- model baseline: `BassetBranched`
+- graph: `CNNBasicTraining`
+- monitored metric: `epoch_end_val_pearson_r2`
+
+Dataset sizes:
+
+- 3'UTR Lib1 observed heads: `c1`, `c2`, `c4`, `c6`, `c13`, `c17`
+  - train `22741`, val `2843`, test `2842`
+- 5'UTR Lib1 observed heads: `c1`, `c2`, `c4`, `c6`, `c17`
+  - train `17288`, val `2161`, test `2160`
+
+Stage 1 sweep results:
+
+- 3'UTR sweep `54r4667a`
+  - runs completed: `32`
+  - best run: `it06cy6q`
+  - best `epoch_end_val_pearson_r2`: `0.4278`
+  - test `test_pearson_r2`: `0.4163`
+  - test mean Pearson: `0.6427`
+- 5'UTR sweep `5wraz7oh`
+  - runs completed: `32`
+  - best monitored run: `j4z89e01`
+  - best `epoch_end_val_pearson_r2`: `0.5067`
+  - test `test_pearson_r2`: `0.4636`
+  - test mean Pearson: `0.6802`
+  - best test run in the same sweep: `o4ipczqg`, test `test_pearson_r2` `0.4717`
+
+Metric note:
+
+- `epoch_end_val_pearson_r2` is Pearson correlation squared after flattening all outputs
+- this is the historical repo HPO metric, not standard coefficient-of-determination R2
+- standard regression R2 is logged separately as `*_cod_r2`
+
+Modeling interpretation:
+
+- reverse-complement augmentation was harmful for both UTR branched sweeps, consistent with UTRs being directional regulatory elements for RNA processing / translation
+- enhancer RC augmentation should stay a separate empirical choice because enhancer activity is less tied to transcript direction, but flanking/vector context still matters
+- the 5'UTR branched baseline is strong enough that a branched `UTR_BassetVL` rewrite is not the immediate next blocker
+
+Recommended next phase:
+
+1. run focused Stage 2 HPO for both UTRs with `use_reverse_complements: false`
+2. keep `BassetBranched` as the first baseline while narrowing LR, weight decay, branch depth, branch width, and dropout
+3. after Stage 2, rerun the top two or three configs with multiple seeds
+4. only then compare against branched `UTR_BassetVL` or ResNet-style alternatives
 
 ### Important blocker
 

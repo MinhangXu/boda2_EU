@@ -1,4 +1,5 @@
 import argparse
+import ast
 import math
 import os
 import sys
@@ -18,6 +19,33 @@ from ..common import utils
 from .utils import (add_optimizer_specific_args, add_scheduler_specific_args, reorg_optimizer_args, reorg_scheduler_args,
                     normalize_scheduler_name, filter_state_dict, pearson_correlation, spearman_correlation,
                     shannon_entropy, pearson_r2_score, coefficient_of_determination)
+
+
+def _coerce_optional_list(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "" or value.lower() in {"none", "null"}:
+            return None
+        if value.startswith("[") and value.endswith("]"):
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed]
+            except Exception:
+                pass
+        return value.split()
+    if isinstance(value, (list, tuple)):
+        flattened = []
+        for item in value:
+            coerced = _coerce_optional_list(item)
+            if coerced is None:
+                continue
+            flattened.extend(coerced)
+        return flattened
+    return [str(value)]
+
 
 class CNNBasicTraining(LightningModule):
     """
@@ -54,6 +82,7 @@ class CNNBasicTraining(LightningModule):
         group.add_argument('--scheduler', type=str)
         group.add_argument('--scheduler_monitor', type=str)
         group.add_argument('--scheduler_interval', type=str, default='epoch')
+        group.add_argument('--output_names', type=str, nargs='+', default=None)
         return parser
     
     @staticmethod
@@ -84,6 +113,7 @@ class CNNBasicTraining(LightningModule):
             Namespace: Processed arguments.
         """
         graph_args   = grouped_args['Graph Module args']
+        graph_args.output_names = _coerce_optional_list(getattr(graph_args, 'output_names', None))
         graph_args.scheduler = normalize_scheduler_name(graph_args.scheduler)
         graph_args.optimizer_args = vars(grouped_args['Optimizer args'])
         graph_args.optimizer_args = reorg_optimizer_args(graph_args.optimizer_args)
@@ -100,7 +130,8 @@ class CNNBasicTraining(LightningModule):
     
     def __init__(self, model, optimizer='Adam', scheduler=None, 
                  scheduler_monitor=None, scheduler_interval='epoch', 
-                 optimizer_args=None, scheduler_args=None):
+                 optimizer_args=None, scheduler_args=None,
+                 output_names=None):
         """
         Initialize the CNNBasicTraining module.
 
@@ -122,6 +153,7 @@ class CNNBasicTraining(LightningModule):
         self.scheduler_interval= scheduler_interval
         self.optimizer_args = optimizer_args
         self.scheduler_args = scheduler_args
+        self.output_names = _coerce_optional_list(output_names)
         
     def forward(self, input):
         """
@@ -148,6 +180,49 @@ class CNNBasicTraining(LightningModule):
             torch.Tensor: Categorical mean squared error.
         """
         return (x - y).pow(2).mean(dim=0)
+
+    def output_names_for(self, n_outputs):
+        if self.output_names is not None and len(self.output_names) == n_outputs:
+            return self.output_names
+        if n_outputs == 3:
+            return ['K562', 'HepG2', 'SKNSH']
+        if n_outputs == 1:
+            return ['SingleOutput']
+        return [f'output_{i}' for i in range(n_outputs)]
+
+    @staticmethod
+    def _metric_vector(values):
+        if not torch.is_tensor(values):
+            values = torch.as_tensor(values)
+        if values.dim() == 0:
+            values = values.unsqueeze(0)
+        return values
+
+    def log_per_output_metrics(self, prefix, pearson_vals=None, spearman_vals=None, mse_vals=None, **log_kwargs):
+        metric_source = pearson_vals
+        if metric_source is None:
+            metric_source = spearman_vals
+        if metric_source is None:
+            metric_source = mse_vals
+        if metric_source is None:
+            return
+
+        metric_source = self._metric_vector(metric_source)
+        names = self.output_names_for(metric_source.numel())
+        for idx, name in enumerate(names):
+            if idx >= metric_source.numel():
+                break
+            if pearson_vals is not None:
+                pearson_vec = self._metric_vector(pearson_vals)
+                coeff = pearson_vec[idx]
+                self.log(f'{prefix}_pearson_{name}', coeff, **log_kwargs)
+                self.log(f'{prefix}_pearson_squared_{name}', coeff ** 2, **log_kwargs)
+            if spearman_vals is not None:
+                spearman_vec = self._metric_vector(spearman_vals)
+                self.log(f'{prefix}_spearman_{name}', spearman_vec[idx], **log_kwargs)
+            if mse_vals is not None:
+                mse_vec = self._metric_vector(mse_vals)
+                self.log(f'{prefix}_mse_{name}', mse_vec[idx], **log_kwargs)
         
     def aug_log(self, internal_metrics=None, external_metrics=None):
         """
@@ -264,20 +339,8 @@ class CNNBasicTraining(LightningModule):
         pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y) 
         self.log('valid_mean_pearson', mean_pearsonr)
 
-        # per cell-type pearson correlation
-        n_outputs = getattr(self.model, 'n_outputs', 1)  # or store in hparams
-        if n_outputs == 3:
-            cell_types = ['K562', 'HepG2', 'SKNSH']
-            for i, coeff in enumerate(pearsonr_vals):
-                # If i >= len(cell_types), you'll get an index error
-                # so be sure you have exactly i elements in cell_types.
-                self.log(f'valid_pearson_{cell_types[i]}', coeff)
-                self.log(f'valid_pearson_squared_{cell_types[i]}', coeff**2)
-        else:
-            # Single output scenario
-            cell_types = ['SingleOutput']
-
         metric = self.categorical_mse(y_hat, y)
+        self.log_per_output_metrics('valid', pearson_vals=pearsonr_vals, mse_vals=metric)
         return {'loss': loss, 'metric': metric, 'preds': y_hat, 'labels': y}
 
     def validation_epoch_end(self, val_step_outputs):
@@ -293,12 +356,15 @@ class CNNBasicTraining(LightningModule):
                       .mean(dim=0).pow(-1).mean().pow(-1)
         epoch_preds = torch.cat([batch['preds'] for batch in val_step_outputs], dim=0)
         epoch_labels  = torch.cat([batch['labels'] for batch in val_step_outputs], dim=0)
+        val_mse = (epoch_preds - epoch_labels).pow(2).mean()
+        val_mse_vals = (epoch_preds - epoch_labels).pow(2).mean(dim=0)
 
         # Track both historical Pearson^2 and standard coefficient of determination.
         val_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
         val_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
 
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
+        epoch_pearson_vals, epoch_pearson = pearson_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
         specificity_spearman, specificity_mean_spearman = spearman_correlation(shannon_pred, shannon_label)
         '''
@@ -315,18 +381,26 @@ class CNNBasicTraining(LightningModule):
         on_epoch = True  # This ensures metrics are logged per epoch
         self.log('epoch_end_val_pearson_r2', val_pearson_r2, on_epoch=on_epoch)
         self.log('epoch_end_val_cod_r2', val_cod_r2, on_epoch=on_epoch)
+        self.log('epoch_end_val_mse', val_mse, on_epoch=on_epoch)
         self.log('arithmetic_mean_loss', arit_mean, on_epoch=on_epoch)
         self.log('harmonic_mean_loss', harm_mean, on_epoch=on_epoch) 
         self.log('prediction_mean_spearman', mean_spearman.item(), on_epoch=on_epoch)
         self.log('entropy_spearman', specificity_mean_spearman.item(), on_epoch=on_epoch)
 
         # Normalized summary keys consumed by `train_wandb_log.build_provenance_record`.
-        _, epoch_pearson = pearson_correlation(epoch_preds, epoch_labels)
         self.log('val_pearson_r2', val_pearson_r2, on_epoch=on_epoch)
         self.log('val_cod_r2', val_cod_r2, on_epoch=on_epoch)
+        self.log('val_mse', val_mse, on_epoch=on_epoch)
         self.log('val_loss', arit_mean, on_epoch=on_epoch)
         self.log('val_pearson', epoch_pearson.item() if hasattr(epoch_pearson, 'item') else float(epoch_pearson), on_epoch=on_epoch)
         self.log('val_spearman', mean_spearman.item(), on_epoch=on_epoch)
+        self.log_per_output_metrics(
+            'val',
+            pearson_vals=epoch_pearson_vals,
+            spearman_vals=spearman,
+            mse_vals=val_mse_vals,
+            on_epoch=on_epoch,
+        )
         
         # You can also explicitly log the epoch
         self.log('current_epoch', self.current_epoch, on_epoch=True)
@@ -357,10 +431,11 @@ class CNNBasicTraining(LightningModule):
     def test_epoch_end(self, test_step_outputs):
         """
         Aggregate test-set predictions across batches and log R2 / Pearson /
-        Spearman / loss to the W&B run summary via `self.log(..., on_epoch=True)`.
+        Spearman / MSE / loss to the W&B run summary via
+        `self.log(..., on_epoch=True)`.
 
         Metric keys (`test_pearson_r2`, `test_cod_r2`, `test_pearson`,
-        `test_spearman`, `test_loss`) are consumed by
+        `test_spearman`, `test_mse`, `test_loss`) are consumed by
         `train_wandb_log.build_provenance_record` and written to the run
         summary / manifest layer.
         """
@@ -370,6 +445,8 @@ class CNNBasicTraining(LightningModule):
         loss = torch.stack([b['loss'] for b in test_step_outputs], dim=0).mean()
         epoch_preds = torch.cat([b['preds'] for b in test_step_outputs], dim=0)
         epoch_labels = torch.cat([b['labels'] for b in test_step_outputs], dim=0)
+        test_mse = (epoch_preds - epoch_labels).pow(2).mean()
+        test_mse_vals = (epoch_preds - epoch_labels).pow(2).mean(dim=0)
 
         test_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
         test_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
@@ -380,12 +457,21 @@ class CNNBasicTraining(LightningModule):
         self.log('test_loss', loss, on_epoch=on_epoch)
         self.log('test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
         self.log('test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('test_mse', test_mse, on_epoch=on_epoch)
         self.log('test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
         self.log('test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
         self.log('epoch_end_test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
         self.log('epoch_end_test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('epoch_end_test_mse', test_mse, on_epoch=on_epoch)
         self.log('epoch_end_test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
         self.log('epoch_end_test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
+        self.log_per_output_metrics(
+            'test',
+            pearson_vals=pearson_vals,
+            spearman_vals=spearman_vals,
+            mse_vals=test_mse_vals,
+            on_epoch=on_epoch,
+        )
         return None
 
 class CNNTransferLearning(CNNBasicTraining):
@@ -425,6 +511,7 @@ class CNNTransferLearning(CNNBasicTraining):
         group.add_argument('--scheduler', type=str)
         group.add_argument('--scheduler_monitor', type=str)
         group.add_argument('--scheduler_interval', type=str, default='epoch')
+        group.add_argument('--output_names', type=str, nargs='+', default=None)
         return parser
     
     ####################
@@ -434,7 +521,8 @@ class CNNTransferLearning(CNNBasicTraining):
     def __init__(self, model, parent_weights, frozen_epochs=0, 
                  optimizer='Adam', scheduler=None, 
                  scheduler_monitor=None, scheduler_interval='epoch', 
-                 optimizer_args=None, scheduler_args=None):
+                 optimizer_args=None, scheduler_args=None,
+                 output_names=None):
         """
         Initialize the CNNTransferLearning module.
 
@@ -450,7 +538,8 @@ class CNNTransferLearning(CNNBasicTraining):
             scheduler_args (dict): Arguments for the scheduler. Default is None.
         """
         super().__init__(model, optimizer, scheduler, scheduler_monitor, 
-                         scheduler_interval, optimizer_args, scheduler_args)
+                         scheduler_interval, optimizer_args, scheduler_args,
+                         output_names=output_names)
 
         self.parent_weights = parent_weights
         self.frozen_epochs  = frozen_epochs
@@ -556,6 +645,7 @@ class CNNTransferLearningActivityBias(CNNTransferLearning):
         group.add_argument('--scheduler', type=str)
         group.add_argument('--scheduler_monitor', type=str)
         group.add_argument('--scheduler_interval', type=str, default='epoch')        
+        group.add_argument('--output_names', type=str, nargs='+', default=None)
         
         return parser
     
@@ -567,7 +657,8 @@ class CNNTransferLearningActivityBias(CNNTransferLearning):
                  rebalance_quantile=0.5, frozen_epochs=1,  
                  optimizer='Adam', scheduler=None, 
                  scheduler_monitor=None, scheduler_interval='epoch', 
-                 optimizer_args=None, scheduler_args=None):
+                 optimizer_args=None, scheduler_args=None,
+                 output_names=None):
         """
         Initialize the CNNTransferLearningActivityBias module.
 
@@ -585,7 +676,8 @@ class CNNTransferLearningActivityBias(CNNTransferLearning):
         """
         super().__init__(model, parent_weights, frozen_epochs, 
                          optimizer, scheduler, scheduler_monitor, 
-                         scheduler_interval, optimizer_args, scheduler_args)
+                         scheduler_interval, optimizer_args, scheduler_args,
+                         output_names=output_names)
 
         self.rebalance_quantile = rebalance_quantile
         

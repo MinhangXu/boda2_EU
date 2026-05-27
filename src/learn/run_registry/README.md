@@ -7,6 +7,8 @@ and HPO bookkeeping.
 
 - `best_runs.csv`
   - curated best-known runs across task families
+- `runs.csv`
+  - append-only per-run manifest written by `src/learn/train_wandb_log.py`
 - `sweep_launches.csv`
   - append-only sweep launch log written by scripts in `src/learn/launch/`
 
@@ -18,6 +20,11 @@ Use `best_runs.csv` when you need to answer:
 - which config path produced it?
 - where should I look for artifacts or model paths?
 - what comparison group did it belong to?
+
+Use `runs.csv` when you need to compare all runs in a sweep or recover the
+exact metric values that selected a checkpoint. Legacy `val_r2`, `test_r2`,
+and `train_r2` are Pearson correlation squared; prefer explicit
+`*_pearson_r2`, `*_cod_r2`, and `*_mse` columns for new analyses.
 
 Use `sweep_launches.csv` when you need to answer:
 
@@ -33,4 +40,3 @@ Use `sweep_launches.csv` when you need to answer:
 3. inspect results in W&B
 4. confirm best checkpoints in notebook or local cache
 5. promote the winning run into `best_runs.csv`
-

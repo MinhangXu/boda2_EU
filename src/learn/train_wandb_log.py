@@ -79,6 +79,15 @@ RUNS_CSV_COLUMNS = [
     "hostname",
     "git_commit",
     "notes",
+    "val_pearson_r2",
+    "val_cod_r2",
+    "val_mse",
+    "test_pearson_r2",
+    "test_cod_r2",
+    "test_mse",
+    "train_pearson_r2",
+    "train_cod_r2",
+    "train_mse",
 ]
 
 
@@ -252,12 +261,55 @@ def build_provenance_record(
         "hostname": socket.gethostname(),
         "git_commit": _resolve_git_commit() or "",
         "notes": os.environ.get("BODA_LAUNCH_NOTES", os.environ.get("LAUNCH_NOTES", "")),
+        "val_pearson_r2": _get_first("val_pearson_r2", "epoch_end_val_pearson_r2", "epoch_end_val_r2", "val_r2_score"),
+        "val_cod_r2": _get_first("val_cod_r2", "epoch_end_val_cod_r2"),
+        "val_mse": _get_first("val_mse", "epoch_end_val_mse"),
+        "test_pearson_r2": _get_first("test_pearson_r2", "epoch_end_test_pearson_r2", "test_r2", "epoch_end_test_r2"),
+        "test_cod_r2": _get_first("test_cod_r2", "epoch_end_test_cod_r2"),
+        "test_mse": _get_first("test_mse", "epoch_end_test_mse"),
+        "train_pearson_r2": _get_first("train_pearson_r2", "epoch_end_train_pearson_r2", "train_r2", "epoch_end_train_r2"),
+        "train_cod_r2": _get_first("train_cod_r2", "epoch_end_train_cod_r2"),
+        "train_mse": _get_first("train_mse", "epoch_end_train_mse"),
     }
     # Replace None with "" for CSV-friendliness.
     for k, v in list(record.items()):
         if v is None:
             record[k] = ""
     return record
+
+
+def _ensure_runs_csv_columns(target_path: str) -> List[str]:
+    """
+    Return the fieldnames to use when appending a runs.csv row.
+
+    If an existing manifest was written by an older script, rewrite only the
+    header/rows needed to add newly introduced columns before appending.
+    """
+    if not os.path.isfile(target_path):
+        return list(RUNS_CSV_COLUMNS)
+
+    with open(target_path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        existing_columns = list(reader.fieldnames or [])
+        existing_rows = list(reader)
+
+    if not existing_columns:
+        return list(RUNS_CSV_COLUMNS)
+
+    missing_columns = [col for col in RUNS_CSV_COLUMNS if col not in existing_columns]
+    if not missing_columns:
+        return existing_columns
+
+    extra_columns = [col for col in existing_columns if col not in RUNS_CSV_COLUMNS]
+    migrated_columns = list(RUNS_CSV_COLUMNS) + extra_columns
+    tmp_path = target_path + ".tmp"
+    with open(tmp_path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=migrated_columns, extrasaction="ignore")
+        writer.writeheader()
+        for row in existing_rows:
+            writer.writerow({col: row.get(col, "") for col in migrated_columns})
+    os.replace(tmp_path, target_path)
+    return migrated_columns
 
 
 def append_runs_csv_row(record: Dict[str, Any]) -> Optional[str]:
@@ -276,13 +328,14 @@ def append_runs_csv_row(record: Dict[str, Any]) -> Optional[str]:
         target_path = os.path.join(here, "run_registry", "runs.csv")
 
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    is_new = not os.path.isfile(target_path)
     try:
+        is_new = (not os.path.isfile(target_path)) or os.path.getsize(target_path) == 0
+        fieldnames = _ensure_runs_csv_columns(target_path)
         with open(target_path, "a", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=RUNS_CSV_COLUMNS, extrasaction="ignore")
+            writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
             if is_new:
                 writer.writeheader()
-            writer.writerow({col: record.get(col, "") for col in RUNS_CSV_COLUMNS})
+            writer.writerow({col: record.get(col, "") for col in fieldnames})
         return target_path
     except Exception as exc:
         print(f"WARN: failed to append runs.csv row: {exc}", file=sys.stderr)
@@ -605,7 +658,7 @@ def _log_train_eval_metrics(graph, data):
     """
     Run a single forward pass over the training dataloader using the best
     checkpoint and log (train_loss, train_pearson_r2, train_cod_r2,
-    train_pearson, train_spearman) to the active W&B run summary so
+    train_mse, train_pearson, train_spearman) to the active W&B run summary so
     `runs.csv` gets populated.
 
     This is intentionally separate from `training_step` / `validation_step`:
@@ -673,24 +726,63 @@ def _log_train_eval_metrics(graph, data):
     except Exception:
         train_cod_r2 = None
     try:
-        _, train_pearson = pearson_correlation(all_preds, all_labels)
+        train_pearson_vals, train_pearson = pearson_correlation(all_preds, all_labels)
         train_pearson = float(train_pearson)
     except Exception:
+        train_pearson_vals = None
         train_pearson = None
     try:
-        _, train_spearman = spearman_correlation(all_preds, all_labels)
+        train_spearman_vals, train_spearman = spearman_correlation(all_preds, all_labels)
         train_spearman = float(train_spearman)
     except Exception:
+        train_spearman_vals = None
         train_spearman = None
     train_loss = float(torch.stack(losses).mean()) if losses else None
+    try:
+        train_mse = float((all_preds - all_labels).pow(2).mean())
+    except Exception:
+        train_mse = None
 
     summary_updates = {
         "train_loss": train_loss,
+        "train_mse": train_mse,
         "train_pearson_r2": train_pearson_r2,
         "train_cod_r2": train_cod_r2,
         "train_pearson": train_pearson,
         "train_spearman": train_spearman,
     }
+
+    try:
+        metric_source = train_pearson_vals if train_pearson_vals is not None else train_spearman_vals
+        if metric_source is not None:
+            if metric_source.dim() == 0:
+                metric_source = metric_source.unsqueeze(0)
+            n_outputs = int(metric_source.numel())
+            if hasattr(graph, "output_names_for"):
+                output_names = graph.output_names_for(n_outputs)
+            elif n_outputs == 1:
+                output_names = ["SingleOutput"]
+            else:
+                output_names = [f"output_{idx}" for idx in range(n_outputs)]
+            if train_pearson_vals is not None and train_pearson_vals.dim() == 0:
+                train_pearson_vals = train_pearson_vals.unsqueeze(0)
+            if train_spearman_vals is not None and train_spearman_vals.dim() == 0:
+                train_spearman_vals = train_spearman_vals.unsqueeze(0)
+            train_mse_vals = (all_preds - all_labels).pow(2).mean(dim=0)
+            if train_mse_vals.dim() == 0:
+                train_mse_vals = train_mse_vals.unsqueeze(0)
+            for idx, name in enumerate(output_names):
+                if train_pearson_vals is not None and idx < train_pearson_vals.numel():
+                    coeff = float(train_pearson_vals[idx])
+                    summary_updates[f"train_pearson_{name}"] = coeff
+                    summary_updates[f"train_pearson_squared_{name}"] = coeff ** 2
+                if train_spearman_vals is not None and idx < train_spearman_vals.numel():
+                    summary_updates[f"train_spearman_{name}"] = float(train_spearman_vals[idx])
+                if idx < train_mse_vals.numel():
+                    summary_updates[f"train_mse_{name}"] = float(train_mse_vals[idx])
+    except Exception as exc:
+        print(f"WARN: train-set per-output metrics failed: {exc}", file=sys.stderr)
+
     for k, v in summary_updates.items():
         if v is not None:
             try:
@@ -700,6 +792,214 @@ def _log_train_eval_metrics(graph, data):
     print("Train-set eval summary: " + ", ".join(
         f"{k}={v}" for k, v in summary_updates.items() if v is not None
     ))
+
+
+def _sanitize_metric_fragment(value: Any) -> str:
+    """Make a short value safe for use inside a W&B summary key."""
+    text = re.sub(r"[^A-Za-z0-9_]+", "_", str(value)).strip("_")
+    return text or "unknown"
+
+
+def _log_library_split_eval_metrics(graph, data):
+    """
+    For combined Hani Lib1+Lib2 tables, log held-out metrics split by library.
+
+    The canonical datamodule trains on one CSV and reports combined validation
+    and test metrics. Phase 3 also needs Lib1-only and Lib2-only readouts, so
+    this best-checkpoint post-fit hook reuses the datamodule's target
+    normalization stats and evaluates each `fold` x `library` slice from the
+    source table. It is intentionally best-effort and silently skips non-Hani
+    tables or CSVs without a `library` column.
+    """
+    if wandb.run is None:
+        return
+    if not all(hasattr(data, attr) for attr in ("datafile_path", "activity_columns", "sequence_column")):
+        return
+
+    datafile_path = getattr(data, "datafile_path", None)
+    if not datafile_path:
+        return
+
+    try:
+        import numpy as np
+        import pandas as pd
+        from boda.graph.utils import pearson_correlation, spearman_correlation, pearson_r2_score, coefficient_of_determination
+    except Exception as exc:
+        print(f"WARN: cannot import libraries for split/library eval: {exc}", file=sys.stderr)
+        return
+
+    try:
+        df = pd.read_csv(datafile_path)
+    except Exception as exc:
+        print(f"WARN: cannot read datafile for split/library eval: {exc}", file=sys.stderr)
+        return
+
+    fold_column = getattr(data, "fold_column", "fold")
+    library_column = "library"
+    sequence_column = getattr(data, "sequence_column", "seq")
+    activity_columns = list(getattr(data, "activity_columns", []) or [])
+    required = [sequence_column, fold_column, library_column, *activity_columns]
+    if not activity_columns or any(column not in df.columns for column in required):
+        return
+
+    df = df.dropna(subset=required).copy()
+    if df.empty:
+        return
+    for column in activity_columns:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+    df = df.dropna(subset=activity_columns).copy()
+    if df.empty:
+        return
+
+    means = None
+    stds = None
+    if getattr(data, "normalize_activity", False):
+        raw_means = getattr(data, "activity_means", None)
+        raw_stds = getattr(data, "activity_stds", None)
+        try:
+            means = np.asarray([float(raw_means[column]) for column in activity_columns], dtype=np.float32)
+            stds = np.asarray([float(raw_stds[column]) for column in activity_columns], dtype=np.float32)
+            stds[~np.isfinite(stds) | (np.abs(stds) < 1e-8)] = 1.0
+        except Exception:
+            means = None
+            stds = None
+
+    device = next(graph.parameters()).device
+    graph.eval()
+
+    def predict_scaled(sequences: List[str], batch_size: int) -> np.ndarray:
+        tensors = torch.stack([utils.dna2tensor(str(seq).strip().upper()) for seq in sequences])
+        loader = torch.utils.data.DataLoader(
+            torch.utils.data.TensorDataset(tensors),
+            batch_size=batch_size,
+            shuffle=False,
+        )
+        preds = []
+        with torch.no_grad():
+            for (x_batch,) in loader:
+                preds.append(graph(x_batch.to(device)).detach().cpu())
+        return torch.cat(preds, dim=0).numpy()
+
+    def safe_float(value: Any) -> Optional[float]:
+        try:
+            value = float(value)
+        except Exception:
+            return None
+        if not np.isfinite(value):
+            return None
+        return value
+
+    batch_size = int(getattr(data, "batch_size", 512) or 512)
+    summary_updates: Dict[str, Any] = {}
+    slice_specs = []
+    for fold_value in sorted(df[fold_column].dropna().unique()):
+        fold_df = df[df[fold_column].eq(fold_value)].copy()
+        if fold_df.empty:
+            continue
+        slice_specs.append((fold_value, "combined", fold_df))
+        for library_value in sorted(fold_df[library_column].dropna().unique()):
+            lib_df = fold_df[fold_df[library_column].eq(library_value)].copy()
+            if not lib_df.empty:
+                slice_specs.append((fold_value, library_value, lib_df))
+
+    for fold_value, library_value, sub in slice_specs:
+        if len(sub) < 2:
+            continue
+        true_raw_np = sub[activity_columns].to_numpy(dtype=np.float32)
+        if means is not None and stds is not None:
+            labels_scaled_np = (true_raw_np - means) / stds
+        else:
+            labels_scaled_np = true_raw_np
+
+        try:
+            pred_scaled_np = predict_scaled(sub[sequence_column].tolist(), batch_size=batch_size)
+        except Exception as exc:
+            print(
+                f"WARN: split/library eval prediction failed for {fold_value}/{library_value}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        if pred_scaled_np.ndim == 1:
+            pred_scaled_np = pred_scaled_np.reshape(-1, 1)
+        if pred_scaled_np.shape != labels_scaled_np.shape:
+            print(
+                f"WARN: split/library eval shape mismatch for {fold_value}/{library_value}: "
+                f"pred={pred_scaled_np.shape}, true={labels_scaled_np.shape}",
+                file=sys.stderr,
+            )
+            continue
+
+        pred_raw_np = pred_scaled_np * stds + means if means is not None and stds is not None else pred_scaled_np
+        pred_scaled = torch.as_tensor(pred_scaled_np, dtype=torch.float32)
+        labels_scaled = torch.as_tensor(labels_scaled_np, dtype=torch.float32)
+        pred_raw = torch.as_tensor(pred_raw_np, dtype=torch.float32)
+        true_raw = torch.as_tensor(true_raw_np, dtype=torch.float32)
+
+        fold_key = _sanitize_metric_fragment(fold_value)
+        library_key = _sanitize_metric_fragment(library_value)
+        prefix = f"eval_{fold_key}_{library_key}"
+
+        try:
+            loss = graph.criterion(pred_scaled, labels_scaled)
+            summary_updates[f"{prefix}_loss"] = safe_float(loss)
+        except Exception:
+            pass
+        try:
+            summary_updates[f"{prefix}_pearson_r2"] = safe_float(pearson_r2_score(labels_scaled, pred_scaled))
+        except Exception:
+            pass
+        try:
+            summary_updates[f"{prefix}_cod_r2"] = safe_float(coefficient_of_determination(labels_scaled, pred_scaled))
+        except Exception:
+            pass
+        try:
+            pearson_vals, mean_pearson = pearson_correlation(pred_scaled, labels_scaled)
+            summary_updates[f"{prefix}_mean_per_head_pearson"] = safe_float(mean_pearson)
+            for idx, name in enumerate(graph.output_names_for(int(pearson_vals.numel())) if hasattr(graph, "output_names_for") else activity_columns):
+                if idx < pearson_vals.numel():
+                    coeff = safe_float(pearson_vals[idx])
+                    summary_updates[f"{prefix}_pearson_{_sanitize_metric_fragment(name)}"] = coeff
+                    summary_updates[f"{prefix}_pearson_squared_{_sanitize_metric_fragment(name)}"] = (
+                        coeff * coeff if coeff is not None else None
+                    )
+        except Exception:
+            pass
+        try:
+            spearman_vals, mean_spearman = spearman_correlation(pred_scaled, labels_scaled)
+            summary_updates[f"{prefix}_spearman"] = safe_float(mean_spearman)
+            names = graph.output_names_for(int(spearman_vals.numel())) if hasattr(graph, "output_names_for") else activity_columns
+            for idx, name in enumerate(names):
+                if idx < spearman_vals.numel():
+                    summary_updates[f"{prefix}_spearman_{_sanitize_metric_fragment(name)}"] = safe_float(spearman_vals[idx])
+        except Exception:
+            pass
+        try:
+            avg_pred = pred_raw.mean(dim=1)
+            avg_true = true_raw.mean(dim=1)
+            _, avg_pearson = pearson_correlation(avg_pred, avg_true)
+            _, avg_spearman = spearman_correlation(avg_pred, avg_true)
+            _, flat_pearson = pearson_correlation(pred_raw.reshape(-1), true_raw.reshape(-1))
+            _, flat_spearman = spearman_correlation(pred_raw.reshape(-1), true_raw.reshape(-1))
+            summary_updates[f"{prefix}_average_activity_pearson"] = safe_float(avg_pearson)
+            summary_updates[f"{prefix}_average_activity_spearman"] = safe_float(avg_spearman)
+            summary_updates[f"{prefix}_flattened_activity_pearson"] = safe_float(flat_pearson)
+            summary_updates[f"{prefix}_flattened_activity_spearman"] = safe_float(flat_spearman)
+            summary_updates[f"{prefix}_n_sequences"] = int(len(sub))
+        except Exception:
+            pass
+
+    clean_updates = {key: value for key, value in summary_updates.items() if value is not None}
+    for key, value in clean_updates.items():
+        try:
+            wandb.run.summary[key] = value
+        except Exception:
+            pass
+    if clean_updates:
+        print(
+            "Split/library eval summary: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(clean_updates.items())[:24])
+            + (" ..." if len(clean_updates) > 24 else "")
+        )
 
 
 def _has_overridden_dataloader(data_module: Any, loader_name: str) -> bool:
@@ -843,6 +1143,11 @@ def main(args):
         _log_train_eval_metrics(graph, data)
     except Exception as exc:
         print(f"WARN: train-set evaluation failed: {exc}", file=sys.stderr)
+
+    try:
+        _log_library_split_eval_metrics(graph, data)
+    except Exception as exc:
+        print(f"WARN: split/library evaluation failed: {exc}", file=sys.stderr)
 
     # Report metrics and save the model
     try:

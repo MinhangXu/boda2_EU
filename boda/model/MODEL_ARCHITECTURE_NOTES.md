@@ -110,6 +110,50 @@ This is why `ResNet1DRegressor` should be treated as a genuine architecture
 comparison against `BassetVL` / `UTR_BassetVL`, not just a small implementation
 variation.
 
+### ResNet1D Fine-Tuning Unfreeze Scopes
+
+The current Hani 5′ UTR Lib2 fine-tuning task uses the canonical
+`ResNet1DRegressor` artifact `1mmy39ku` described in
+[`plan/finetune/parade_released_checkpoint_eval_and_finetune_plan_may2026.md`](../../plan/finetune/parade_released_checkpoint_eval_and_finetune_plan_may2026.md)
+and implemented under
+[`src/finetune/finetune_sweep_scripts/hani_lib1_in_house_lib1_5Prime/`](../../src/finetune/finetune_sweep_scripts/hani_lib1_in_house_lib1_5Prime/).
+The exact unfreeze behavior lives in
+[`hani_utr5_lib2_finetune.py`](../../src/finetune/finetune_sweep_scripts/hani_lib1_in_house_lib1_5Prime/hani_utr5_lib2_finetune.py):
+
+- `head_only`: train only parameters whose names start with `head.`.
+- `last_stage_plus_head`: train `head.` plus the final residual stage of
+  `encoder`.
+- `full`: train every parameter in the model.
+
+For the `1mmy39ku` 5′ UTR artifact, the model hyperparameters are:
+
+```text
+input_len = 50
+stem_channels = 123
+stem_kernel_size = 5
+stage_channels = [64, 128, 256]
+stage_blocks = [2, 2, 2]
+block_kernel_size = 9
+head_hidden_channels = 189
+n_outputs = 5
+```
+
+That means the encoder has six residual blocks. In this specific run,
+`last_stage_plus_head` unfreezes only:
+
+```text
+encoder.4.*
+encoder.5.*
+head.*
+```
+
+The stem and earlier residual blocks `encoder.0.*` through `encoder.3.*` stay
+frozen after the head-only warmup. Parameter-wise, this is still a large update
+surface for `1mmy39ku`: roughly 49.5k head parameters plus roughly 2.10M final
+stage parameters, out of roughly 2.87M total parameters. This is why
+`last_stage_plus_head` is much closer to "late-backbone adaptation" than to a
+tiny head-only calibration.
+
 ## `BassetBranched`
 
 `BassetBranched` is the classic Basset-style trunk plus additional branched

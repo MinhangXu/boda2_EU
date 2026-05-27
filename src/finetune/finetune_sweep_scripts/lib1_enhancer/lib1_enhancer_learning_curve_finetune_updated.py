@@ -331,6 +331,7 @@ def compute_regression_metrics(y_true: Any, y_pred: Any) -> dict[str, float]:
     ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
     ss_res = float(np.sum((y_true - y_pred) ** 2))
     out["r2"] = np.nan if ss_tot < 1e-8 else float(1.0 - (ss_res / ss_tot))
+    out["r2_cod"] = out["r2"]
     if np.std(y_true) < 1e-8 or np.std(y_pred) < 1e-8:
         out["pearson"] = np.nan
         out["spearman"] = np.nan

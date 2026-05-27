@@ -1,0 +1,175 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: introns__seelig_2015_a5ss_sd1__scratch__basset_branched
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+parameters:
+  # Data and logging
+  data_module:
+    value: SeeligA5SSScalarDataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/opt_EU_learn_n_design/introns/seelig_2015/A5SS_scalar_targets.csv
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/introns/seelig_2015/a5ss_sd1/basset_branched/scratch_bayes
+  best_checkpoint_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/introns__seelig_2015_a5ss_sd1__scratch__basset_branched/best_checkpoint_model
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/introns/seelig_2015/a5ss_sd1/basset_branched/scratch_bayes
+  logger_project:
+    value: introns__seelig_2015_a5ss_sd1__scratch__basset_branched
+  logger_type:
+    value: wandb
+  run_name:
+    value: introns_seelig_a5ss_sd1_basset_branched_scratch_{runid}
+  sequence_column:
+    value: seq
+  target_column:
+    value: p_sd1
+  output_names:
+    value: [p_sd1]
+  fold_column:
+    value: fold
+  split_by_fold:
+    value: True
+  min_read_count:
+    value: 1
+  normalize_target:
+    value: False
+
+  # Trainer settings
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 16
+  max_epochs:
+    value: 120
+  min_epochs:
+    value: 10
+  stopping_patience:
+    value: 25
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+
+  # Model architecture
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: BassetBranched
+  input_len:
+    value: 101
+  n_outputs:
+    value: 1
+  conv1_channels:
+    distribution: int_uniform
+    min: 64
+    max: 200
+  conv1_kernel_size:
+    distribution: categorical
+    values: [5, 7, 11, 15]
+  conv2_channels:
+    distribution: int_uniform
+    min: 64
+    max: 220
+  conv2_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7, 11]
+  conv3_channels:
+    distribution: int_uniform
+    min: 64
+    max: 220
+  conv3_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]
+  linear_channels:
+    distribution: int_uniform
+    min: 128
+    max: 700
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU, ELU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.05
+    max: 0.45
+  n_branched_layers:
+    distribution: categorical
+    values: [1, 2, 3]
+  branched_channels:
+    distribution: int_uniform
+    min: 32
+    max: 192
+  branched_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU, ELU]
+  branched_dropout_p:
+    distribution: uniform
+    min: 0.0
+    max: 0.4
+  use_batch_norm:
+    distribution: categorical
+    values: [True, False]
+  use_weight_norm:
+    value: False
+
+  # Optimizer and scheduler
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+  lr:
+    distribution: log_uniform_values
+    min: 0.00003
+    max: 0.003
+  beta1:
+    distribution: uniform
+    min: 0.85
+    max: 0.95
+  beta2:
+    distribution: uniform
+    min: 0.98
+    max: 0.999
+  amsgrad:
+    distribution: categorical
+    values: [True, False]
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.005
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  scheduler_interval:
+    distribution: categorical
+    values: [step, epoch]
+  T_0:
+    distribution: categorical
+    values: [500, 1000, 2000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+
+  # Execution
+  batch_size:
+    distribution: categorical
+    values: [256, 512, 1024]
+  num_workers:
+    value: 8
+  use_reverse_complements:
+    value: False
+  pin_memory:
+    value: True
+  seed:
+    value: 42

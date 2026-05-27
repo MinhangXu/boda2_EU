@@ -24,7 +24,9 @@ SOFTWARE.
 
 from .basset import Basset, UTR_BassetVL, BassetVL, BassetEntropyVL, BassetBranched
 from .resnet import ResNet1DRegressor
+from .embedding_heads import EmbeddingMLPRegressor, EmbeddingHeteroscedasticRegressor
 __all__ = [
     'Basset', 'UTR_BassetVL', 'BassetVL', 'BassetEntropyVL', 'BassetBranched', 
     'ResNet1DRegressor',
+    'EmbeddingMLPRegressor', 'EmbeddingHeteroscedasticRegressor',
 ]

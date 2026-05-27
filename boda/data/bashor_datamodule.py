@@ -49,6 +49,18 @@ class BashorDataModule(pl.LightningDataModule):
         group.add_argument('--padded_seq_len', type=int, default=600)
         group.add_argument('--left_flank', type=str, default=constants.MPRA_UPSTREAM)
         group.add_argument('--right_flank', type=str, default=constants.MPRA_DOWNSTREAM)
+        group.add_argument(
+            '--padding_mode',
+            type=str,
+            default='mpra_flank',
+            choices=['mpra_flank', 'neutral', 'none'],
+            help=(
+                "'mpra_flank' pads with the BODA/Malinois MPRA context, "
+                "'neutral' pads with neutral bases such as N, and 'none' uses "
+                "raw sequences and requires equal lengths."
+            ),
+        )
+        group.add_argument('--neutral_pad_char', type=str, default='N')
         group.add_argument('--num_workers', type=int, default=8)
         group.add_argument('--normalize', type=utils.str2bool, default=True)
         group.add_argument('--split_seed', type=int, default=7)
@@ -85,6 +97,8 @@ class BashorDataModule(pl.LightningDataModule):
                  padded_seq_len=600,
                  left_flank=constants.MPRA_UPSTREAM,
                  right_flank=constants.MPRA_DOWNSTREAM,
+                 padding_mode='mpra_flank',
+                 neutral_pad_char='N',
                  num_workers=8,
                  normalize=True,
                  split_seed=7,
@@ -110,6 +124,8 @@ class BashorDataModule(pl.LightningDataModule):
         self.padded_seq_len = padded_seq_len
         self.left_flank = left_flank
         self.right_flank = right_flank
+        self.padding_mode = padding_mode
+        self.neutral_pad_char = neutral_pad_char
         self.num_workers = num_workers
         self.normalize = normalize
         self.split_seed = split_seed
@@ -125,14 +141,22 @@ class BashorDataModule(pl.LightningDataModule):
         self.barcode_weight_cap = barcode_weight_cap
         self.barcode_weight_min = barcode_weight_min
 
+        if self.padding_mode not in {'mpra_flank', 'neutral', 'none'}:
+            raise ValueError(f"Unknown padding_mode: {self.padding_mode}")
+        if len(str(self.neutral_pad_char)) != 1:
+            raise ValueError("neutral_pad_char must be a single character")
+
         self.pad_column_name = 'padded_seq'
-        self.padding_fn = partial(
-            utils.row_pad_sequence,
-            in_column_name=self.sequence_column,
-            padded_seq_len=self.padded_seq_len,
-            upStreamSeq=self.left_flank,
-            downStreamSeq=self.right_flank,
-        )
+        if self.padding_mode == 'mpra_flank':
+            self.padding_fn = partial(
+                utils.row_pad_sequence,
+                in_column_name=self.sequence_column,
+                padded_seq_len=self.padded_seq_len,
+                upStreamSeq=self.left_flank,
+                downStreamSeq=self.right_flank,
+            )
+        else:
+            self.padding_fn = self._pad_sequence_without_flanks
 
         self.dataset_train = None
         self.dataset_val = None
@@ -151,6 +175,36 @@ class BashorDataModule(pl.LightningDataModule):
         raw = np.log1p(float(n)) / np.log1p(float(self.barcode_weight_cap))
         return float(max(self.barcode_weight_min, min(1.0, raw)))
 
+    def _pad_sequence_without_flanks(self, row):
+        sequence = str(row[self.sequence_column]).upper()
+        if self.padding_mode == 'none':
+            return sequence
+
+        target_len = int(self.padded_seq_len)
+        if target_len <= 0:
+            return sequence
+        if len(sequence) > target_len:
+            raise ValueError(
+                f"Sequence length {len(sequence)} exceeds padded_seq_len={target_len} "
+                "for neutral padding."
+            )
+
+        padding_len = target_len - len(sequence)
+        left_len = padding_len // 2
+        right_len = padding_len - left_len
+        pad_char = str(self.neutral_pad_char).upper()
+        return f"{pad_char * left_len}{sequence}{pad_char * right_len}"
+
+    def _validate_padded_lengths(self, df):
+        lengths = df[self.pad_column_name].astype(str).str.len()
+        if lengths.nunique() > 1:
+            counts = lengths.value_counts().sort_index().head(10).to_dict()
+            raise ValueError(
+                f"Sequences have variable lengths after padding_mode={self.padding_mode}: "
+                f"{counts}. Use padding_mode='neutral' with a fixed padded_seq_len, "
+                "or provide equal-length raw sequences for padding_mode='none'."
+            )
+
     def _prep_df(self):
         df = pd.read_csv(self.datafile_path, sep=self.sep).copy()
         df[self.target_column] = pd.to_numeric(df[self.target_column], errors='coerce')
@@ -162,6 +216,7 @@ class BashorDataModule(pl.LightningDataModule):
         ].reset_index(drop=True)
         df['row_id'] = np.arange(len(df))
         df[self.pad_column_name] = df.apply(self.padding_fn, axis=1)
+        self._validate_padded_lengths(df)
         return df
 
     def _build_train_pool_components(self, df_rest):
@@ -301,4 +356,3 @@ class BashorDataModule(pl.LightningDataModule):
 
 class Lib1EnhancerDataModule(BashorDataModule):
     pass
-

@@ -13,6 +13,9 @@ This directory is the main training and HPO launcher layer for `boda2_EU`.
   - older training variant, likely superseded
 - `prepare_enhancer_single_head_dataset.py`
   - legacy helper for derived pan-cell enhancer targets (kept for provenance)
+- `prepare_hani_utr5_lib1_lib2_phase3_dataset.py`
+  - builds the Phase 3 Hani 5'UTR Lib1+Lib2 scratch-training table
+  - preserves Lib1 folds, hash-splits Lib2 by sequence, and reserves Lib2 test
 - `configs/`
   - hand-authored sweep configs organized by CRE family, target family, and model family
 - `configs/README.md`
@@ -79,14 +82,14 @@ Every `train_wandb_log.py` run now:
 1. Trains with `trainer.fit` as before.
 2. Loads the best checkpoint via `set_best`.
 3. Calls `trainer.test(...)` to populate Pearson-R^2 / coefficient of
-   determination / Pearson / Spearman / loss
+   determination R^2 / Pearson / Spearman / MSE / loss
    on the held-out split. `CNNBasicTraining.test_epoch_end` and
    `CNNWeightedRegressionTraining.test_epoch_end` both log the
    `test_pearson_r2`, `test_cod_r2`, `test_pearson`, `test_spearman`,
-   `test_loss` keys consumed by the manifest below.
+   `test_mse`, `test_loss` keys consumed by the manifest below.
 4. Runs a single inference pass over `data.train_dataloader()` and
    writes `train_pearson_r2`, `train_cod_r2`, `train_pearson`,
-   `train_spearman`, `train_loss` to the W&B run summary.
+   `train_spearman`, `train_mse`, `train_loss` to the W&B run summary.
 5. Calls `save_model` which writes `torch_checkpoint.pt`,
    `provenance.json`, and a `.tar.gz` whose filename encodes the
    W&B project and run_id for trivial on-disk lookup.
@@ -94,6 +97,11 @@ Every `train_wandb_log.py` run now:
    `BODA_RUNS_CSV`) containing every field in `RUNS_CSV_COLUMNS` —
    including W&B entity/project/run_id/sweep_id, metric scalars,
    artifact path, git commit, hostname, and launch notes.
+
+The legacy `val_r2`, `test_r2`, and `train_r2` columns are Pearson correlation
+squared for backward compatibility. New analysis should prefer the explicit
+`*_pearson_r2` and `*_cod_r2` columns when distinguishing Pearson-squared from
+coefficient-of-determination R^2.
 
 See `PRETRAINED_MODELS.md` for how to promote a row in `runs.csv` to
 the curated `best_runs.csv` and for the `pretrained_registry.py`
@@ -154,6 +162,11 @@ The usual local state for a `train_wandb_log.py` run is split across a few place
   - Lightning checkpoints and transient files land here first
   - successful runs later bundle/copy the final payload into `artifact_path`
   - safe to prune when you no longer need intermediate checkpoints/logs
+- `outputs/hpo_runs/by_project/<wandb_project_name>/`
+  - archived home for generated project-root HPO folders that used to live
+    directly under `src/learn/`
+  - keeps the source/launcher layer readable while preserving local run
+    provenance for inspection
 
 Practical workflow:
 
@@ -161,7 +174,8 @@ Practical workflow:
 2. let launchers create or reuse `derived_data/` inputs
 3. monitor active and failed runs via `wandb/`
 4. keep successful final model payloads in `local_artifacts/`
-5. treat `outputs/...` as disposable scratch, not as the system of record
+5. treat `outputs/...` and `outputs/hpo_runs/...` as disposable generated
+   state, not as the system of record
 
 Rule of thumb:
 
@@ -221,6 +235,10 @@ In-house lib1 scratch notes:
 
 - target column: `RNA_DNA_Ratio_log10_scaled`
 - sequence column: `Enhancers`
+- new fastqs1-5 table prep:
+  `python src/learn/prepare_lib1_enhancer_fastqs1_5_dataset.py`
+- current fastqs1-5 scratch HPO uses random 80/10/10 train/val/test splits
+  across all retained rows (`test_min_barcodes: 1`)
 - key split controls in sweep configs:
   - `train_min_barcodes`
   - `test_min_barcodes`
@@ -287,13 +305,29 @@ This remains distinct from the Hani RNA activity workflow.
 
 Typical stack:
 
-- data: `HaniGoozardi_RNA_Activity_DataModule`
-- model: `UTR_BassetVL`
+- data: `UTR5_Branched_RNA_Activity_DataModule`
+- model: `UTR_BassetVL`, `BassetBranched`, or `ResNet1DRegressor`
 - graph: `CNNBasicTraining`
 
-Related config:
+Related configs / launchers:
 
 - `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__bayes.yml`
+- `configs/utr5/hani_rna_activity/resnet1d/utr5__hani_rna_activity_lib1_lib2__resnet1d__phase3_scratch_bayes.yml`
+- `launch/utr5_hani_lib1_lib2_resnet1d_phase3_scratch_sweep.sh`
+
+Phase 3 Lib1+Lib2 scratch HPO:
+
+- table prep:
+  `python src/learn/prepare_hani_utr5_lib1_lib2_phase3_dataset.py`
+- derived table:
+  `src/learn/derived_data/utr5/hani_rna_activity/5UTR_lib1_lib2_phase3_branched_observed_heads.csv`
+- split policy:
+  preserve Lib1 folds, aggregate Lib2 replicate rows by uppercased sequence
+  and cell type, assign Lib2 train/val/test by deterministic sequence hash,
+  and drop Lib1 rows that overlap Lib2 by sequence
+- metrics:
+  normal combined trainer metrics plus W&B summary keys named
+  `eval_<fold>_<library>_*` for Lib1-only and Lib2-only monitoring
 
 ### 3'UTR RNA activity
 
@@ -341,7 +375,7 @@ Notebook-friendly helpers now live in:
 
 Best-known run summaries are being tracked in:
 
-- `../plan/best_runs_snapshot.md`
+- `../../plan/learn/best_runs_snapshot.md`
 
 ## Current Config Layout
 

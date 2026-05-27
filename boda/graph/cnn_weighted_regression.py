@@ -28,6 +28,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
         group.add_argument('--scheduler_monitor', type=str)
         group.add_argument('--scheduler_interval', type=str, default='epoch')
         group.add_argument('--weighted_loss_reduction', type=str, default='mean', choices=['mean'])
+        group.add_argument('--output_names', type=str, nargs='+', default=None)
         return parser
 
     @staticmethod
@@ -38,7 +39,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
     def __init__(self, model, optimizer='Adam', scheduler=None,
                  scheduler_monitor=None, scheduler_interval='epoch',
                  optimizer_args=None, scheduler_args=None,
-                 weighted_loss_reduction='mean'):
+                 weighted_loss_reduction='mean', output_names=None):
         super().__init__(
             model=model,
             optimizer=optimizer,
@@ -47,6 +48,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
             scheduler_interval=scheduler_interval,
             optimizer_args=optimizer_args,
             scheduler_args=scheduler_args,
+            output_names=output_names,
         )
         self.weighted_loss_reduction = weighted_loss_reduction
 
@@ -116,6 +118,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
 
         epoch_preds = torch.cat([batch['preds'] for batch in val_step_outputs], dim=0)
         epoch_labels = torch.cat([batch['labels'] for batch in val_step_outputs], dim=0)
+        val_mse = (epoch_preds - epoch_labels).pow(2).mean()
 
         spearman, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
         shannon_pred, shannon_label = shannon_entropy(epoch_preds), shannon_entropy(epoch_labels)
@@ -131,11 +134,13 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
             'entropy_spearman': specificity_mean_spearman.item(),
             'epoch_end_val_pearson_r2': val_pearson_r2,
             'epoch_end_val_cod_r2': val_cod_r2,
+            'epoch_end_val_mse': val_mse,
             # Normalized summary keys shared with CNNBasicTraining so that
             # `train_wandb_log.build_provenance_record` can read a single set
             # of keys regardless of which graph module ran the training.
             'val_pearson_r2': val_pearson_r2,
             'val_cod_r2': val_cod_r2,
+            'val_mse': val_mse,
             'val_loss': arit_mean,
             'val_pearson': pearson_correlation(epoch_preds, epoch_labels)[1].item(),
             'val_spearman': mean_spearman.item(),
@@ -160,7 +165,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
     def test_epoch_end(self, test_step_outputs):
         """
         Same aggregation contract as `CNNBasicTraining.test_epoch_end`: log
-        test_loss / test_pearson_r2 / test_cod_r2 / test_pearson /
+        test_loss / test_mse / test_pearson_r2 / test_cod_r2 / test_pearson /
         test_spearman to W&B summary so `runs.csv` can persist final
         held-out metrics.
         """
@@ -170,6 +175,7 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
         loss = torch.stack([b['loss'] for b in test_step_outputs], dim=0).mean()
         epoch_preds = torch.cat([b['preds'] for b in test_step_outputs], dim=0)
         epoch_labels = torch.cat([b['labels'] for b in test_step_outputs], dim=0)
+        test_mse = (epoch_preds - epoch_labels).pow(2).mean()
 
         test_pearson_r2 = pearson_r2_score(epoch_labels, epoch_preds)
         test_cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
@@ -180,8 +186,10 @@ class CNNWeightedRegressionTraining(CNNBasicTraining):
         self.log('test_loss', loss, on_epoch=on_epoch)
         self.log('test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
         self.log('test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('test_mse', test_mse, on_epoch=on_epoch)
         self.log('test_pearson', mean_pearson.item() if hasattr(mean_pearson, 'item') else float(mean_pearson), on_epoch=on_epoch)
         self.log('test_spearman', mean_spearman.item() if hasattr(mean_spearman, 'item') else float(mean_spearman), on_epoch=on_epoch)
         self.log('epoch_end_test_pearson_r2', test_pearson_r2, on_epoch=on_epoch)
         self.log('epoch_end_test_cod_r2', test_cod_r2, on_epoch=on_epoch)
+        self.log('epoch_end_test_mse', test_mse, on_epoch=on_epoch)
         return None

@@ -1,5 +1,6 @@
 import sys
 import argparse
+import ast
 import tempfile
 from functools import partial
 
@@ -7,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 import torch
+import torch.nn.functional as F
 import lightning.pytorch as pl
 from torch.utils.data import random_split, DataLoader, TensorDataset, ConcatDataset, Dataset
 from sklearn.preprocessing import StandardScaler
@@ -103,6 +105,96 @@ class DNAActivityDataset(Dataset):
             dna = utils.reverse_complement_onehot(dna)
         
         return dna, activity
+
+
+class CellConditionedDNAActivityDataset(Dataset):
+    """
+    Sequence-cell dataset that appends PARADE-style condition channels.
+
+    Each item is one sequence in one cell context. The returned input can
+    include DNA one-hot channels, a triplet-phase channel, a reverse-complement
+    indicator channel, and one-hot cell-condition channels broadcast along the
+    sequence length.
+    """
+
+    VALID_FEATURES = {"sequence", "positional", "conditions", "revcomp"}
+
+    def __init__(self,
+                 dna_tensor,
+                 target_tensor,
+                 cell_index_tensor,
+                 n_cell_types,
+                 features=None,
+                 use_reverse_complements=False):
+        self.dna_tensor = dna_tensor
+        self.target_tensor = target_tensor
+        self.cell_index_tensor = cell_index_tensor.long()
+        self.n_cell_types = int(n_cell_types)
+        self.features = list(features or ["sequence", "positional", "conditions"])
+        self.use_reverse_complements = use_reverse_complements
+
+        unknown = sorted(set(self.features) - self.VALID_FEATURES)
+        if unknown:
+            raise ValueError(f"Unknown cell-conditioned feature(s): {unknown}")
+        if "sequence" not in self.features:
+            raise ValueError("Cell-conditioned datasets must include the 'sequence' feature.")
+
+        self.n_examples = self.dna_tensor.shape[0]
+        self.seq_len = self.dna_tensor.shape[-1]
+        self.positional_channel = (
+            (torch.arange(self.seq_len) % 3 == 0)
+            .to(dtype=torch.float32)
+            .unsqueeze(0)
+        )
+
+    def __len__(self):
+        return self.n_examples * 2 if self.use_reverse_complements else self.n_examples
+
+    @property
+    def num_channels(self):
+        channels = 0
+        if "sequence" in self.features:
+            channels += 4
+        if "positional" in self.features:
+            channels += 1
+        if "revcomp" in self.features:
+            channels += 1
+        if "conditions" in self.features:
+            channels += self.n_cell_types
+        return channels
+
+    def __getitem__(self, idx):
+        take_rc = self.use_reverse_complements and (idx % 2 == 1)
+        item_idx = (idx // 2) if self.use_reverse_complements else idx
+
+        dna = self.dna_tensor[item_idx]
+        target = self.target_tensor[item_idx]
+        cell_idx = self.cell_index_tensor[item_idx]
+        if take_rc:
+            dna = utils.reverse_complement_onehot(dna)
+
+        parts = []
+        if "sequence" in self.features:
+            parts.append(dna)
+        if "positional" in self.features:
+            positional = self.positional_channel
+            if take_rc:
+                positional = torch.flip(positional, dims=[1])
+            parts.append(positional)
+        if "revcomp" in self.features:
+            parts.append(
+                torch.full(
+                    (1, self.seq_len),
+                    fill_value=float(take_rc),
+                    dtype=dna.dtype,
+                    device=dna.device,
+                )
+            )
+        if "conditions" in self.features:
+            condition = F.one_hot(cell_idx, num_classes=self.n_cell_types).to(dtype=dna.dtype)
+            parts.append(condition[:, None].expand(self.n_cell_types, self.seq_len))
+
+        return torch.cat(parts, dim=0), target
 
 class MPRA_DataModule(pl.LightningDataModule):
     """
@@ -1281,6 +1373,491 @@ class HaniGoozardi_RNA_Activity_DataModule(pl.LightningDataModule):
             num_workers=self.num_workers
         )
 
+
+class HaniGoozardi_Branched_RNA_Activity_DataModule(pl.LightningDataModule):
+    """
+    Wide observed-head Hani UTR DataModule for branched multi-cell models.
+
+    Expected table shape is one row per sequence with `seq`, `fold`, and one
+    numeric activity column per observed cell type.
+    """
+
+    @staticmethod
+    def add_data_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group = parser.add_argument_group('Hani Goozardi Branched RNA Activity DataModule')
+
+        group.add_argument('--datafile_path', type=str, required=True)
+        group.add_argument('--sequence_column', type=str, default='seq')
+        group.add_argument('--activity_columns', type=str, nargs='+', required=True)
+        group.add_argument('--fold_column', type=str, default='fold')
+
+        group.add_argument('--train_split', type=float, default=0.8)
+        group.add_argument('--val_split', type=float, default=0.1)
+        group.add_argument('--test_split', type=float, default=0.1)
+        group.add_argument('--split_by_fold', type=utils.str2bool, default=True)
+
+        group.add_argument('--batch_size', type=int, default=256)
+        group.add_argument('--num_workers', type=int, default=8)
+        group.add_argument('--normalize_activity', type=utils.str2bool, default=True)
+        group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
+        group.add_argument('--seed', type=int, default=42)
+
+        return parser
+
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        return grouped_args['Hani Goozardi Branched RNA Activity DataModule']
+
+    def __init__(self,
+                 datafile_path,
+                 sequence_column='seq',
+                 activity_columns=None,
+                 fold_column='fold',
+                 train_split=0.8,
+                 val_split=0.1,
+                 test_split=0.1,
+                 split_by_fold=True,
+                 batch_size=256,
+                 num_workers=8,
+                 normalize_activity=True,
+                 use_reverse_complements=False,
+                 seed=42,
+                 **kwargs):
+        super().__init__()
+        self.datafile_path = datafile_path
+        self.sequence_column = sequence_column
+        self.activity_columns = self._coerce_activity_columns(activity_columns)
+        self.fold_column = fold_column
+        self.train_split = train_split
+        self.val_split = val_split
+        self.test_split = test_split
+        self.split_by_fold = split_by_fold
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.normalize_activity = normalize_activity
+        self.use_reverse_complements = use_reverse_complements
+        self.seed = seed
+
+        self.activity_means = None
+        self.activity_stds = None
+
+    @staticmethod
+    def _coerce_activity_columns(activity_columns):
+        if activity_columns is None:
+            raise ValueError("activity_columns must be provided for branched Hani UTR data")
+        if isinstance(activity_columns, str):
+            return activity_columns.split()
+        return list(activity_columns)
+
+    def setup(self, stage='fit'):
+        print(f"Loading branched UTR data from {self.datafile_path}")
+        df = pd.read_csv(self.datafile_path)
+        print(f"Original branched data shape: {df.shape}")
+
+        required = [self.sequence_column, *self.activity_columns]
+        missing = [column for column in required if column not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns in {self.datafile_path}: {missing}")
+
+        initial_len = len(df)
+        df = df.dropna(subset=required).copy()
+        print(f"After removing NaN values: {len(df)} (removed {initial_len - len(df)})")
+
+        for column in self.activity_columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+        df = df.dropna(subset=self.activity_columns).copy()
+
+        if self.split_by_fold and self.fold_column in df.columns:
+            print(f"Splitting by pre-assigned fold column: '{self.fold_column}'...")
+            print(f"Actual unique values in '{self.fold_column}': {df[self.fold_column].unique()}")
+            df_train = df[df[self.fold_column] == 'train'].copy()
+            df_val = df[df[self.fold_column] == 'val'].copy()
+            df_test = df[df[self.fold_column] == 'test'].copy()
+        else:
+            if not self.split_by_fold:
+                print("Performing random split because split_by_fold is False.")
+            else:
+                print(f"Performing random split because '{self.fold_column}' was not found.")
+            np.random.seed(self.seed)
+            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+            n_total = len(df)
+            n_train = int(n_total * self.train_split)
+            n_val = int(n_total * self.val_split)
+            df_train = df[:n_train].copy()
+            df_val = df[n_train:n_train + n_val].copy()
+            df_test = df[n_train + n_val:].copy()
+
+        for split_name, split_df in [('train', df_train), ('val', df_val), ('test', df_test)]:
+            if len(split_df) == 0:
+                raise ValueError(f"{split_name} split is empty for {self.datafile_path}")
+
+        if self.normalize_activity:
+            self.activity_means = df_train[self.activity_columns].mean()
+            self.activity_stds = df_train[self.activity_columns].std().replace(0, 1.0)
+            for split_df in (df_train, df_val, df_test):
+                split_df[self.activity_columns] = (
+                    split_df[self.activity_columns] - self.activity_means
+                ) / self.activity_stds
+            print("Normalized branched activities using train split statistics:")
+            for column in self.activity_columns:
+                print(
+                    f"  {column}: mean={self.activity_means[column]:.4f}, "
+                    f"std={self.activity_stds[column]:.4f}"
+                )
+
+        print(f"Split sizes - Train: {len(df_train)}, Val: {len(df_val)}, Test: {len(df_test)}")
+        self.dataset_train = self._df_to_dataset(df_train, 'train')
+        self.dataset_val = self._df_to_dataset(df_val, 'val')
+        self.dataset_test = self._df_to_dataset(df_test, 'test')
+
+    def _df_to_dataset(self, df, split_name):
+        print(f"Converting {split_name} branched data to tensors...")
+        sequences = [utils.dna2tensor(seq_str) for seq_str in df[self.sequence_column]]
+        sequences_tensor = torch.stack(sequences)
+        activities_tensor = torch.tensor(
+            df[self.activity_columns].to_numpy(dtype=np.float32),
+            dtype=torch.float32,
+        )
+        print(
+            f"{split_name} tensors - Sequences: {sequences_tensor.shape}, "
+            f"Activities: {activities_tensor.shape}"
+        )
+
+        if split_name == 'train':
+            return DNAActivityDataset(
+                sequences_tensor,
+                activities_tensor,
+                use_reverse_complements=self.use_reverse_complements,
+            )
+        return torch.utils.data.TensorDataset(sequences_tensor, activities_tensor)
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset_val,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.dataset_test,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+
+
+class HaniGoozardi_CellConditioned_RNA_Activity_DataModule(pl.LightningDataModule):
+    """
+    Long-form Hani UTR DataModule for PARADE-style two-output prediction.
+
+    The input table is the wide observed-head table used by the branched
+    models. During setup, each sequence is expanded into one row per cell type.
+    The model receives DNA sequence channels plus optional condition channels
+    and predicts two targets for that sequence-cell pair: delta and activity by
+    default.
+    """
+
+    @staticmethod
+    def add_data_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group = parser.add_argument_group('Hani Goozardi Cell-Conditioned RNA Activity DataModule')
+
+        group.add_argument('--datafile_path', type=str, required=True)
+        group.add_argument('--sequence_column', type=str, default='seq')
+        group.add_argument('--activity_columns', type=str, nargs='+', required=True)
+        group.add_argument('--delta_columns', type=str, nargs='+', default=None)
+        group.add_argument('--target_columns', type=str, nargs='+', default=['delta', 'activity'])
+        group.add_argument('--cell_type_order', type=str, nargs='+', default=None)
+        group.add_argument('--condition_features', type=str, nargs='+',
+                           default=['sequence', 'positional', 'conditions'])
+        group.add_argument('--fold_column', type=str, default='fold')
+
+        group.add_argument('--train_split', type=float, default=0.8)
+        group.add_argument('--val_split', type=float, default=0.1)
+        group.add_argument('--test_split', type=float, default=0.1)
+        group.add_argument('--split_by_fold', type=utils.str2bool, default=True)
+
+        group.add_argument('--batch_size', type=int, default=1024)
+        group.add_argument('--num_workers', type=int, default=8)
+        group.add_argument('--normalize_activity', type=utils.str2bool, default=True)
+        group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False)
+        group.add_argument('--seed', type=int, default=42)
+
+        return parser
+
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        return grouped_args['Hani Goozardi Cell-Conditioned RNA Activity DataModule']
+
+    @staticmethod
+    def _coerce_list(value, default=None):
+        if value is None:
+            return list(default) if default is not None else None
+        if isinstance(value, (list, tuple)):
+            out = []
+            for item in value:
+                if isinstance(item, str):
+                    item = item.strip()
+                    if item.startswith('[') and item.endswith(']'):
+                        try:
+                            parsed = ast.literal_eval(item)
+                            if isinstance(parsed, (list, tuple)):
+                                out.extend(str(x) for x in parsed)
+                                continue
+                        except Exception:
+                            pass
+                    out.append(item)
+                else:
+                    out.append(str(item))
+            return out
+        if isinstance(value, str):
+            value = value.strip()
+            if value.startswith('[') and value.endswith(']'):
+                try:
+                    parsed = ast.literal_eval(value)
+                    if isinstance(parsed, (list, tuple)):
+                        return [str(x) for x in parsed]
+                except Exception:
+                    pass
+            return value.split()
+        return [str(value)]
+
+    def __init__(self,
+                 datafile_path,
+                 sequence_column='seq',
+                 activity_columns=None,
+                 delta_columns=None,
+                 target_columns=None,
+                 cell_type_order=None,
+                 condition_features=None,
+                 fold_column='fold',
+                 train_split=0.8,
+                 val_split=0.1,
+                 test_split=0.1,
+                 split_by_fold=True,
+                 batch_size=1024,
+                 num_workers=8,
+                 normalize_activity=True,
+                 use_reverse_complements=False,
+                 seed=42,
+                 **kwargs):
+        super().__init__()
+        self.datafile_path = datafile_path
+        self.sequence_column = sequence_column
+        self.activity_columns = self._coerce_list(activity_columns)
+        if not self.activity_columns:
+            raise ValueError("activity_columns must be provided for cell-conditioned Hani UTR data")
+        self.delta_columns = self._coerce_list(delta_columns)
+        if self.delta_columns is not None and len(self.delta_columns) != len(self.activity_columns):
+            raise ValueError("delta_columns must be absent or the same length as activity_columns")
+        self.target_columns = self._coerce_list(target_columns, default=['delta', 'activity'])
+        self.cell_type_order = self._coerce_list(cell_type_order, default=self.activity_columns)
+        if sorted(self.cell_type_order) != sorted(self.activity_columns):
+            raise ValueError("cell_type_order must contain the same labels as activity_columns")
+        self.condition_features = self._coerce_list(
+            condition_features,
+            default=['sequence', 'positional', 'conditions'],
+        )
+        self.fold_column = fold_column
+        self.train_split = train_split
+        self.val_split = val_split
+        self.test_split = test_split
+        self.split_by_fold = split_by_fold
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.normalize_activity = normalize_activity
+        self.use_reverse_complements = use_reverse_complements
+        self.seed = seed
+
+        self.target_means = None
+        self.target_stds = None
+        self.cell_type_to_index = {cell_type: idx for idx, cell_type in enumerate(self.cell_type_order)}
+        self.num_condition_channels = len(self.cell_type_order)
+
+    @property
+    def input_channels(self):
+        channels = 0
+        if 'sequence' in self.condition_features:
+            channels += 4
+        if 'positional' in self.condition_features:
+            channels += 1
+        if 'revcomp' in self.condition_features:
+            channels += 1
+        if 'conditions' in self.condition_features:
+            channels += self.num_condition_channels
+        return channels
+
+    def _ensure_delta_columns(self, df):
+        if self.delta_columns is not None:
+            missing_delta = [column for column in self.delta_columns if column not in df.columns]
+            if missing_delta:
+                raise ValueError(f"Missing requested delta columns in {self.datafile_path}: {missing_delta}")
+            return df, self.delta_columns
+
+        mean_activity = df[self.activity_columns].mean(axis=1)
+        delta_columns = []
+        for activity_column in self.activity_columns:
+            delta_column = f"delta_{activity_column}"
+            if delta_column not in df.columns:
+                df[delta_column] = df[activity_column] - mean_activity
+            delta_columns.append(delta_column)
+        return df, delta_columns
+
+    def _wide_to_long(self, df):
+        pieces = []
+        for activity_column, delta_column in zip(self.activity_columns, self.delta_columns):
+            piece = pd.DataFrame({
+                self.sequence_column: df[self.sequence_column].to_numpy(),
+                'cell_type': activity_column,
+                'cell_index': self.cell_type_to_index[activity_column],
+                'activity': df[activity_column].to_numpy(dtype=np.float32),
+                'delta': df[delta_column].to_numpy(dtype=np.float32),
+            })
+            if self.fold_column in df.columns:
+                piece[self.fold_column] = df[self.fold_column].to_numpy()
+            pieces.append(piece)
+        out = pd.concat(pieces, ignore_index=True)
+        return out.dropna(subset=[self.sequence_column, *self.target_columns]).reset_index(drop=True)
+
+    def setup(self, stage='fit'):
+        print(f"Loading cell-conditioned branched UTR data from {self.datafile_path}")
+        df = pd.read_csv(self.datafile_path)
+        print(f"Original wide data shape: {df.shape}")
+
+        required = [self.sequence_column, *self.activity_columns]
+        missing = [column for column in required if column not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns in {self.datafile_path}: {missing}")
+
+        for column in self.activity_columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+        df = df.dropna(subset=required).copy()
+        df, self.delta_columns = self._ensure_delta_columns(df)
+        for column in self.delta_columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+        df = df.dropna(subset=self.delta_columns).copy()
+
+        if self.split_by_fold and self.fold_column in df.columns:
+            print(f"Splitting by pre-assigned fold column: '{self.fold_column}'...")
+            df_train = df[df[self.fold_column] == 'train'].copy()
+            df_val = df[df[self.fold_column] == 'val'].copy()
+            df_test = df[df[self.fold_column] == 'test'].copy()
+        else:
+            if not self.split_by_fold:
+                print("Performing random split because split_by_fold is False.")
+            else:
+                print(f"Performing random split because '{self.fold_column}' was not found.")
+            np.random.seed(self.seed)
+            df = df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
+            n_total = len(df)
+            n_train = int(n_total * self.train_split)
+            n_val = int(n_total * self.val_split)
+            df_train = df[:n_train].copy()
+            df_val = df[n_train:n_train + n_val].copy()
+            df_test = df[n_train + n_val:].copy()
+
+        for split_name, split_df in [('train', df_train), ('val', df_val), ('test', df_test)]:
+            if len(split_df) == 0:
+                raise ValueError(f"{split_name} split is empty for {self.datafile_path}")
+
+        long_train = self._wide_to_long(df_train)
+        long_val = self._wide_to_long(df_val)
+        long_test = self._wide_to_long(df_test)
+
+        if self.normalize_activity:
+            self.target_means = long_train[self.target_columns].mean()
+            self.target_stds = long_train[self.target_columns].std().replace(0, 1.0)
+            for split_df in (long_train, long_val, long_test):
+                split_df[self.target_columns] = (
+                    split_df[self.target_columns] - self.target_means
+                ) / self.target_stds
+            print("Normalized cell-conditioned targets using train split statistics:")
+            for column in self.target_columns:
+                print(
+                    f"  {column}: mean={self.target_means[column]:.4f}, "
+                    f"std={self.target_stds[column]:.4f}"
+                )
+
+        print(
+            "Long split sizes - "
+            f"Train: {len(long_train)}, Val: {len(long_val)}, Test: {len(long_test)}"
+        )
+        print(
+            f"Condition features: {self.condition_features}; "
+            f"input channels: {self.input_channels}; targets: {self.target_columns}"
+        )
+
+        self.dataset_train = self._df_to_dataset(long_train, 'train')
+        self.dataset_val = self._df_to_dataset(long_val, 'val')
+        self.dataset_test = self._df_to_dataset(long_test, 'test')
+
+    def _df_to_dataset(self, df, split_name):
+        print(f"Converting {split_name} cell-conditioned data to tensors...")
+        sequences = [utils.dna2tensor(seq_str) for seq_str in df[self.sequence_column]]
+        sequences_tensor = torch.stack(sequences)
+        targets_tensor = torch.tensor(
+            df[self.target_columns].to_numpy(dtype=np.float32),
+            dtype=torch.float32,
+        )
+        cell_index_tensor = torch.tensor(df['cell_index'].to_numpy(dtype=np.int64), dtype=torch.long)
+        dataset = CellConditionedDNAActivityDataset(
+            sequences_tensor,
+            targets_tensor,
+            cell_index_tensor,
+            n_cell_types=self.num_condition_channels,
+            features=self.condition_features,
+            use_reverse_complements=(split_name == 'train' and self.use_reverse_complements),
+        )
+        print(
+            f"{split_name} tensors - Inputs before condition channels: {sequences_tensor.shape}, "
+            f"effective input channels: {dataset.num_channels}, Targets: {targets_tensor.shape}"
+        )
+        return dataset
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset_train,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset_val,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.dataset_test,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+
+
 class UTR3_RNA_Activity_DataModule(HaniGoozardi_RNA_Activity_DataModule):
     """
     Alias of `HaniGoozardi_RNA_Activity_DataModule` for 3'UTR RNA-activity
@@ -1302,4 +1879,24 @@ class UTR5_RNA_Activity_DataModule(HaniGoozardi_RNA_Activity_DataModule):
     family in the `data_module` field. Existing utr5 configs that still
     reference the parent class continue to work unchanged.
     """
+    pass
+
+
+class UTR3_Branched_RNA_Activity_DataModule(HaniGoozardi_Branched_RNA_Activity_DataModule):
+    """Observed-head 3'UTR Hani Library 1 branched DataModule."""
+    pass
+
+
+class UTR5_Branched_RNA_Activity_DataModule(HaniGoozardi_Branched_RNA_Activity_DataModule):
+    """Observed-head 5'UTR Hani Library 1 branched DataModule."""
+    pass
+
+
+class UTR3_CellConditioned_RNA_Activity_DataModule(HaniGoozardi_CellConditioned_RNA_Activity_DataModule):
+    """Cell-conditioned 3'UTR Hani Library 1 activity/delta DataModule."""
+    pass
+
+
+class UTR5_CellConditioned_RNA_Activity_DataModule(HaniGoozardi_CellConditioned_RNA_Activity_DataModule):
+    """Cell-conditioned 5'UTR Hani Library 1 activity/delta DataModule."""
     pass

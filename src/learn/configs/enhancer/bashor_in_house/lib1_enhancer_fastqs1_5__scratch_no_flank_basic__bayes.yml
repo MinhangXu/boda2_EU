@@ -1,0 +1,100 @@
+program: train_wandb_log.py
+method: bayes
+metric:
+  name: epoch_end_val_pearson_r2
+  goal: maximize
+entity: minhangxu1998-baylor-college-of-medicine
+project: enhancer__bashor_in_house__fastqs1_5_filtered__scratch_no_flank__bassetvl_vs_resnet1d
+parameters:
+  data_module:
+    value: Lib1EnhancerDataModule
+  model_module:
+    values: [BassetVL, ResNet1DRegressor]
+  n_outputs:
+    value: 1
+  loss_criterion:
+    value: MSELoss
+  graph_module:
+    value: CNNBasicTraining
+  logger_project:
+    value: enhancer__bashor_in_house__fastqs1_5_filtered__scratch_no_flank__bassetvl_vs_resnet1d
+  run_name:
+    value: lib1_fastqs1_5_scratch_no_flank_basic_{runid}
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/enhancer/bashor_in_house/lib1_fastqs1_5_scratch_no_flank_basic
+  best_checkpoint_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/enhancer__bashor_in_house__fastqs1_5_filtered__scratch_no_flank__bassetvl_vs_resnet1d/best_checkpoint_model
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/enhancer/bashor_in_house/lib1_fastqs1_5_scratch_no_flank_basic
+  datafile_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/enhancer/bashor_in_house/lib1_fastqs1_5_0filtered_out__learn_ready.tsv
+  sep:
+    value: tab
+  sequence_column:
+    value: Enhancers
+  target_column:
+    value: RNA_DNA_Ratio_log10_scaled
+  barcode_column:
+    value: n_barcodes
+
+  # No biological MPRA flank context: raw enhancer sequence plus neutral N padding.
+  # 216 is the smallest Basset-compatible length above the observed max enhancer length (211 bp).
+  padded_seq_len:
+    value: 216
+  input_len:
+    value: 216
+  padding_mode:
+    value: neutral
+  neutral_pad_char:
+    value: N
+
+  test_min_barcodes:
+    value: 1
+  train_min_barcodes:
+    value: 1
+  val_frac_within_hq:
+    value: 0.1
+  test_frac_within_hq:
+    value: 0.1
+  train_size_frac:
+    value: 1.0
+  train_sampling_mode:
+    value: random
+  use_reverse_complements:
+    values: [true, false]
+  barcode_weighting:
+    value: false
+  batch_size:
+    values: [64, 128]
+  num_workers:
+    value: 8
+  optimizer:
+    value: AdamW
+  scheduler:
+    value: ReduceLROnPlateau
+  scheduler_monitor:
+    value: step_valid_loss
+  scheduler_interval:
+    value: epoch
+  lr:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 5e-3
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-2
+  max_epochs:
+    value: 80
+  checkpoint_monitor:
+    value: epoch_end_val_pearson_r2
+  stopping_mode:
+    value: max
+  stopping_patience:
+    value: 20
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 16

@@ -48,6 +48,7 @@ class ResNet1DRegressor(ptl.LightningModule):
         parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
         group = parser.add_argument_group('Model Module args')
         group.add_argument('--input_len', type=int, default=600)
+        group.add_argument('--input_channels', type=int, default=4)
         group.add_argument('--stem_channels', type=int, default=64)
         group.add_argument('--stem_kernel_size', type=int, default=15)
         group.add_argument('--stage_channels', type=int, nargs='+', default=[64, 128, 256])
@@ -73,6 +74,7 @@ class ResNet1DRegressor(ptl.LightningModule):
 
     def __init__(self,
                  input_len=600,
+                 input_channels=4,
                  stem_channels=64,
                  stem_kernel_size=15,
                  stage_channels=(64, 128, 256),
@@ -86,13 +88,14 @@ class ResNet1DRegressor(ptl.LightningModule):
                  loss_args={}):
         super().__init__()
         self.input_len = input_len
+        self.input_channels = input_channels
         self.n_outputs = n_outputs
         self.loss_criterion = loss_criterion
         self.loss_args = loss_args
 
         stem_pad = stem_kernel_size // 2
         self.stem = nn.Sequential(
-            nn.Conv1d(4, stem_channels, stem_kernel_size, stride=1, padding=stem_pad, bias=not use_batch_norm),
+            nn.Conv1d(input_channels, stem_channels, stem_kernel_size, stride=1, padding=stem_pad, bias=not use_batch_norm),
             nn.BatchNorm1d(stem_channels) if use_batch_norm else nn.Identity(),
             nn.ReLU(),
         )

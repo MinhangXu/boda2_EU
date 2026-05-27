@@ -31,9 +31,31 @@ ensure_registry_file() {
   fi
 }
 
+resolve_config_path() {
+  local config_path="$1"
+  if [[ "${config_path}" == /* ]]; then
+    printf '%s\n' "${config_path}"
+    return 0
+  fi
+  if [[ -f "${config_path}" ]]; then
+    (cd "$(dirname "${config_path}")" && printf '%s/%s\n' "$(pwd)" "$(basename "${config_path}")")
+    return 0
+  fi
+  if [[ -f "${LEARN_DIR}/${config_path}" ]]; then
+    printf '%s/%s\n' "${LEARN_DIR}" "${config_path}"
+    return 0
+  fi
+
+  echo "ERROR: config file not found: ${config_path}" >&2
+  echo "       Looked relative to $(pwd) and ${LEARN_DIR}." >&2
+  return 1
+}
+
 yaml_top_level_value() {
   local config_path="$1"
   local key="$2"
+  local resolved_config
+  resolved_config="$(resolve_config_path "${config_path}")"
   awk -F': *' -v key="${key}" '
     $0 ~ ("^" key ":[[:space:]]*") {
       value = $0
@@ -42,12 +64,14 @@ yaml_top_level_value() {
       print value
       exit
     }
-  ' "${config_path}"
+  ' "${resolved_config}"
 }
 
 yaml_parameter_value() {
   local config_path="$1"
   local key="$2"
+  local resolved_config
+  resolved_config="$(resolve_config_path "${config_path}")"
   awk -v key="${key}" '
     /^parameters:[[:space:]]*$/ {
       in_parameters = 1
@@ -67,7 +91,7 @@ yaml_parameter_value() {
       print value
       exit
     }
-  ' "${config_path}"
+  ' "${resolved_config}"
 }
 
 resolve_wandb_sweep_entity() {
@@ -116,6 +140,8 @@ materialize_sweep_config() {
   local target_config="$2"
   local wandb_entity="$3"
   local wandb_project="$4"
+  local resolved_source_config
+  resolved_source_config="$(resolve_config_path "${source_config}")"
   awk -v wandb_entity="${wandb_entity}" -v wandb_project="${wandb_project}" '
     BEGIN {
       entity_written = 0
@@ -160,7 +186,7 @@ materialize_sweep_config() {
         }
       }
     }
-  ' "${source_config}" > "${target_config}"
+  ' "${resolved_source_config}" > "${target_config}"
 }
 
 extract_sweep_path_from_output() {
@@ -181,6 +207,44 @@ extract_sweep_path_from_output() {
   fi
 
   printf '\n'
+}
+
+detect_idle_gpus() {
+  local memory_threshold_mb="${GPU_IDLE_MEMORY_MB:-512}"
+
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "ERROR: nvidia-smi is not available; set GPU_LIST explicitly." >&2
+    return 1
+  fi
+
+  local active_gpu_list
+  active_gpu_list="$(
+    (nvidia-smi pmon -c 1 2>/dev/null || true) \
+      | awk 'NR > 2 && $2 != "-" {print $1}' \
+      | sort -n -u \
+      | xargs
+  )"
+
+  nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits \
+    | awk -F',' -v threshold="${memory_threshold_mb}" -v active="${active_gpu_list}" '
+      BEGIN {
+        n = split(active, active_ids, " ")
+        for (i = 1; i <= n; i++) {
+          if (active_ids[i] != "") {
+            busy[active_ids[i]] = 1
+          }
+        }
+      }
+      {
+        idx = $1
+        mem = $2
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", mem)
+        if (!(idx in busy) && (mem + 0) <= threshold) {
+          print idx
+        }
+      }
+    '
 }
 
 record_sweep_launch() {
@@ -234,15 +298,17 @@ record_sweep_launch() {
 
 create_sweep_if_needed() {
   local config_path="$1"
+  local resolved_config_path
   local sweep_path=""
   local output_file
   local temp_config=""
   local wandb_entity
   local wandb_project
   local sweep_status=0
+  resolved_config_path="$(resolve_config_path "${config_path}")"
   output_file="$(mktemp)"
-  wandb_entity="$(resolve_wandb_sweep_entity "${config_path}")"
-  wandb_project="$(resolve_wandb_sweep_project "${config_path}")"
+  wandb_entity="$(resolve_wandb_sweep_entity "${resolved_config_path}")"
+  wandb_project="$(resolve_wandb_sweep_project "${resolved_config_path}")"
 
   if [[ -n "${SWEEP_ID:-}" ]]; then
     local provided_sweep="${SWEEP_ID}"
@@ -254,7 +320,7 @@ create_sweep_if_needed() {
     sweep_path="${provided_sweep}"
   else
     temp_config="$(mktemp --suffix=.yaml)"
-    materialize_sweep_config "${config_path}" "${temp_config}" "${wandb_entity}" "${wandb_project}"
+    materialize_sweep_config "${resolved_config_path}" "${temp_config}" "${wandb_entity}" "${wandb_project}"
 
     if (
       cd "${LEARN_DIR}" &&
@@ -309,6 +375,12 @@ launch_wandb_agents() {
   shift 7
   local gpu_list=("$@")
 
+  if [[ ${#gpu_list[@]} -eq 0 || -z "${gpu_list[*]// }" ]]; then
+    echo "ERROR: no GPUs selected for ${config_path}." >&2
+    echo "       Set GPU_LIST explicitly or leave it unset so the launcher can auto-detect idle GPUs." >&2
+    return 1
+  fi
+
   # PILOT=1 shrinks a curated sweep to a 1-agent / 1-run smoke test, regardless
   # of what the launcher script configured. Useful for verifying the config +
   # data + model + graph + save_model chain before burning GPU hours on the
@@ -360,10 +432,8 @@ launch_wandb_agents() {
 
   # Resolve an absolute config path so the provenance row in runs.csv is
   # reproducible regardless of the agent's working directory.
-  local abs_config_path="${config_path}"
-  if [[ "${abs_config_path}" != /* ]]; then
-    abs_config_path="${LEARN_DIR}/${config_path}"
-  fi
+  local abs_config_path
+  abs_config_path="$(resolve_config_path "${config_path}")"
 
   # Metadata that each training process will stamp into provenance.json /
   # run_registry/runs.csv. `wandb agent` inherits the parent shell's env, so

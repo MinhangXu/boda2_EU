@@ -116,6 +116,161 @@ def hash_row_ids(df: pd.DataFrame) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
+def make_absolute_train_size_grid(
+    n_available: int,
+    min_train_size: int,
+    train_sizes: list[int] | None,
+) -> list[int]:
+    if not train_sizes:
+        return []
+    sizes: set[int] = set()
+    for value in train_sizes:
+        size = int(value)
+        if size <= 0:
+            continue
+        sizes.add(max(int(min_train_size), min(int(n_available), size)))
+    sizes.add(int(n_available))
+    return sorted(sizes)
+
+
+def summarize_split_frame(
+    frame: pd.DataFrame,
+    *,
+    barcode_column: str,
+    target_column: str,
+    sequence_column: str,
+) -> dict[str, Any]:
+    if frame.empty:
+        return {
+            "n_rows": 0,
+            "barcode_min": np.nan,
+            "barcode_median": np.nan,
+            "barcode_max": np.nan,
+            "target_mean": np.nan,
+            "target_std": np.nan,
+            "target_min": np.nan,
+            "target_median": np.nan,
+            "target_max": np.nan,
+            "sequence_len_min": np.nan,
+            "sequence_len_median": np.nan,
+            "sequence_len_max": np.nan,
+        }
+
+    barcode_values = pd.to_numeric(frame[barcode_column], errors="coerce")
+    target_values = pd.to_numeric(frame[target_column], errors="coerce")
+    if "sequence_len" in frame.columns:
+        sequence_lens = pd.to_numeric(frame["sequence_len"], errors="coerce")
+    else:
+        sequence_lens = frame[sequence_column].astype(str).str.len()
+    return {
+        "n_rows": int(len(frame)),
+        "barcode_min": float(barcode_values.min()),
+        "barcode_median": float(barcode_values.median()),
+        "barcode_max": float(barcode_values.max()),
+        "target_mean": float(target_values.mean()),
+        "target_std": float(target_values.std()),
+        "target_min": float(target_values.min()),
+        "target_median": float(target_values.median()),
+        "target_max": float(target_values.max()),
+        "sequence_len_min": float(sequence_lens.min()),
+        "sequence_len_median": float(sequence_lens.median()),
+        "sequence_len_max": float(sequence_lens.max()),
+    }
+
+
+def build_split_membership_rows(
+    split_payload: dict[str, Any],
+    *,
+    seed: int,
+    split_strategy: str,
+    split_seed_base: int,
+    val_frac: float,
+    test_frac: float,
+    high_quality_min_barcodes: int,
+    barcode_column: str,
+    target_column: str,
+    sequence_column: str,
+) -> pd.DataFrame:
+    parts = []
+    for split_name, frame in [
+        ("train_rest", split_payload["train_rest_df"]),
+        ("val", split_payload["val_df"]),
+        ("test", split_payload["test_df"]),
+    ]:
+        part = frame.copy()
+        part["split"] = split_name
+        if split_name == "train_rest":
+            part["pool_role"] = np.where(
+                part[barcode_column] >= high_quality_min_barcodes,
+                "train_rest_leftover_hq",
+                "train_rest_lower_quality",
+            )
+        elif split_name == "val":
+            part["pool_role"] = "fixed_val_hq"
+        else:
+            part["pool_role"] = "fixed_test_hq"
+        parts.append(part)
+
+    membership = pd.concat(parts, axis=0, ignore_index=True)
+    columns = ["row_id", barcode_column, target_column]
+    if "sequence_len" in membership.columns:
+        columns.append("sequence_len")
+    elif sequence_column in membership.columns:
+        membership["sequence_len"] = membership[sequence_column].astype(str).str.len()
+        columns.append("sequence_len")
+    out = membership[columns].copy()
+    out["seed"] = int(seed)
+    out["split_strategy"] = split_strategy
+    out["split_seed_base"] = int(split_seed_base)
+    out["split_seed_effective"] = split_payload["split_seed_effective"]
+    out["val_seed_effective"] = split_payload["val_seed_effective"]
+    out["test_seed_effective"] = split_payload["test_seed_effective"]
+    out["split_val_fraction"] = float(val_frac)
+    out["split_test_fraction"] = float(test_frac)
+    out["high_quality_min_barcodes"] = int(high_quality_min_barcodes)
+    out["split"] = membership["split"].to_numpy()
+    out["pool_role"] = membership["pool_role"].to_numpy()
+    return out
+
+
+def build_split_membership_summary(
+    membership_rows: pd.DataFrame,
+    *,
+    barcode_column: str,
+    target_column: str,
+) -> pd.DataFrame:
+    if membership_rows.empty:
+        return pd.DataFrame()
+    records: list[dict[str, Any]] = []
+    group_cols = [
+        "seed",
+        "split_strategy",
+        "split_seed_base",
+        "split_seed_effective",
+        "val_seed_effective",
+        "test_seed_effective",
+        "split_val_fraction",
+        "split_test_fraction",
+        "high_quality_min_barcodes",
+        "split",
+        "pool_role",
+    ]
+    for key, group in membership_rows.groupby(group_cols, dropna=False):
+        if not isinstance(key, tuple):
+            key = (key,)
+        payload = dict(zip(group_cols, key))
+        payload.update(
+            summarize_split_frame(
+                group,
+                barcode_column=barcode_column,
+                target_column=target_column,
+                sequence_column="sequence_len",
+            )
+        )
+        records.append(payload)
+    return pd.DataFrame(records).sort_values(group_cols).reset_index(drop=True)
+
+
 def collect_preprocessing_summary(data_path: Path) -> dict[str, Any]:
     raw_df = pd.read_csv(data_path).copy()
     required_columns = {
@@ -277,6 +432,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test_frac_within_hq", type=float, default=0.20)
     parser.add_argument("--train_size_fracs", nargs="*", type=float, default=DEFAULT_TRAIN_SIZE_FRACS)
     parser.add_argument(
+        "--train_sizes",
+        nargs="*",
+        type=int,
+        default=None,
+        help=(
+            "Optional absolute train-size grid. Values larger than the eligible pool "
+            "are clamped, and the full eligible pool is always appended."
+        ),
+    )
+    parser.add_argument(
         "--train_sampling_mode",
         type=str,
         default="hq_first",
@@ -291,6 +456,14 @@ def parse_args() -> argparse.Namespace:
         default=["head_only", "branched_only", "linear_all_head", "conv3_plus", "full"],
         choices=["head_only", "branched_only", "linear_all_head", "conv3_plus", "full"],
     )
+    parser.add_argument(
+        "--init_heads",
+        nargs="+",
+        type=str,
+        default=None,
+        choices=["K562", "HepG2", "SKNSH"],
+        help="Optional subset of pretrained output heads to initialize from. Defaults to all heads.",
+    )
     parser.add_argument("--include_b1", action="store_true")
     parser.add_argument("--include_b2", action="store_true")
     parser.add_argument("--include_b3", action="store_true")
@@ -304,8 +477,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight_decay", type=float, default=DEFAULT_WEIGHT_DECAY)
     parser.add_argument("--max_epochs", type=int, default=DEFAULT_MAX_EPOCHS)
     parser.add_argument("--patience", type=int, default=DEFAULT_PATIENCE)
+    parser.add_argument(
+        "--disable_early_stopping",
+        action="store_true",
+        help="Train for max_epochs by setting effective patience to max_epochs + 1.",
+    )
     parser.add_argument("--frozen_epochs", type=int, default=DEFAULT_FROZEN_EPOCHS)
     parser.add_argument("--train_batch_size", type=int, default=DEFAULT_TRAIN_BATCH_SIZE)
+    parser.add_argument(
+        "--preview_only",
+        action="store_true",
+        help="Write split/threshold/train-size planning CSVs without loading the model or training.",
+    )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -321,7 +504,7 @@ def main() -> None:
 
     if not args.data_path.exists():
         raise FileNotFoundError(args.data_path)
-    if not args.model_path.exists():
+    if not args.model_path.exists() and not args.preview_only:
         raise FileNotFoundError(args.model_path)
 
     if not any([args.include_b1, args.include_b2, args.include_b3]):
@@ -334,6 +517,14 @@ def main() -> None:
     b3_bcap_grid = list(args.b3_bcaps) if args.b3_bcaps else [args.b3_bcap]
     head_lr_grid = list(args.head_lrs) if args.head_lrs else [args.head_lr]
     backbone_lr_grid = list(args.backbone_lrs) if args.backbone_lrs else [args.backbone_lr]
+    selected_heads = [
+        (head_idx, head_name)
+        for head_idx, head_name in enumerate(base.PRETRAINED_HEADS)
+        if args.init_heads is None or head_name in set(args.init_heads)
+    ]
+    if not selected_heads:
+        raise ValueError(f"No pretrained heads selected from {base.PRETRAINED_HEADS}: {args.init_heads}")
+    effective_patience = int(args.max_epochs + 1 if args.disable_early_stopping else args.patience)
 
     device = base.resolve_device(args.device)
     args.outdir.mkdir(parents=True, exist_ok=True)
@@ -366,6 +557,12 @@ def main() -> None:
     manifest["per_epoch_train_metrics_logged"] = True
     manifest["per_epoch_val_metrics_logged"] = True
     manifest["per_epoch_test_metrics_logged"] = True
+    manifest["absolute_train_sizes_requested"] = list(args.train_sizes) if args.train_sizes else None
+    manifest["full_train_size_appended"] = True
+    manifest["selected_init_heads"] = [head_name for _, head_name in selected_heads]
+    manifest["effective_patience"] = effective_patience
+    manifest["early_stopping_disabled"] = bool(args.disable_early_stopping)
+    manifest["preview_only"] = bool(args.preview_only)
     manifest["dataset_sequence_column"] = DATASET_SEQUENCE_COLUMN
     manifest["dataset_barcode_column"] = DATASET_BARCODE_COLUMN
     manifest["dataset_raw_ratio_column"] = DATASET_RAW_RATIO_COLUMN
@@ -382,9 +579,18 @@ def main() -> None:
     print(f"Split strategy: {args.split_strategy}")
     print(f"Validation fraction: {val_frac}")
     print(f"Test fraction: {test_frac}")
+    if args.train_sizes:
+        print(f"Absolute train-size grid request: {args.train_sizes} (+ full pool)")
+    else:
+        print(f"Train-size fractions: {args.train_size_fracs}")
     print(f"Head LR grid: {head_lr_grid}")
     print(f"Backbone LR grid: {backbone_lr_grid}")
+    print(f"Init heads: {[head_name for _, head_name in selected_heads]}")
     print(f"B3 b_cap grid: {b3_bcap_grid}")
+    if args.disable_early_stopping:
+        print(f"Early stopping disabled: training all runs for {args.max_epochs} epochs.")
+    else:
+        print(f"Patience: {effective_patience}")
     print(
         "Preprocessing summary: "
         f"raw_rows={preprocessing_summary['n_rows_raw']}, "
@@ -395,7 +601,7 @@ def main() -> None:
     )
 
     clean_df = base.load_clean_df(args.data_path)
-    checkpoint = base.load_checkpoint_from_tar(args.model_path, map_location="cpu")
+    checkpoint = None if args.preview_only else base.load_checkpoint_from_tar(args.model_path, map_location="cpu")
 
     fixed_split_payload = None
     if args.split_strategy == "fixed_hq_val_test":
@@ -424,6 +630,8 @@ def main() -> None:
     history_records: list[pd.DataFrame] = []
     zero_shot_fixed_df: pd.DataFrame | None = None
     zero_shot_seed_records: list[pd.DataFrame] = []
+    planned_records: list[dict[str, Any]] = []
+    membership_records: list[pd.DataFrame] = []
 
     for seed in args.seeds:
         if fixed_split_payload is not None:
@@ -461,7 +669,22 @@ def main() -> None:
             f"split_seed_effective={split_payload['split_seed_effective']}"
         )
 
-        if split_payload["test_is_fixed_across_seeds"]:
+        membership_records.append(
+            build_split_membership_rows(
+                split_payload,
+                seed=seed,
+                split_strategy=args.split_strategy,
+                split_seed_base=args.split_seed,
+                val_frac=val_frac,
+                test_frac=test_frac,
+                high_quality_min_barcodes=args.train_priority_min_barcodes,
+                barcode_column=base.BARCODE_COLUMN,
+                target_column=base.TARGET_COLUMN,
+                sequence_column=base.SEQUENCE_COLUMN,
+            )
+        )
+
+        if (not args.preview_only) and split_payload["test_is_fixed_across_seeds"]:
             if zero_shot_fixed_df is None:
                 zero_shot_fixed_df = base.run_zero_shot_eval_on_fixed_test(
                     checkpoint,
@@ -471,7 +694,7 @@ def main() -> None:
                 zero_shot_fixed_df["split_strategy"] = args.split_strategy
                 zero_shot_fixed_df["split_seed_effective"] = split_payload["split_seed_effective"]
                 zero_shot_fixed_df["test_seed_effective"] = split_payload["test_seed_effective"]
-        else:
+        elif not args.preview_only:
             zero_shot_df = base.run_zero_shot_eval_on_fixed_test(
                 checkpoint,
                 split_payload["test_padded"],
@@ -496,11 +719,18 @@ def main() -> None:
                 print(f"Skipping seed {seed}, threshold {train_threshold}: only {len(pool)} rows available.")
                 continue
 
-            size_grid = base.make_train_size_grid(
-                n_available=len(pool),
-                min_train_size=args.min_train_size,
-                train_size_fracs=list(args.train_size_fracs) if args.train_size_fracs else None,
-            )
+            if args.train_sizes:
+                size_grid = make_absolute_train_size_grid(
+                    n_available=len(pool),
+                    min_train_size=args.min_train_size,
+                    train_sizes=list(args.train_sizes),
+                )
+            else:
+                size_grid = base.make_train_size_grid(
+                    n_available=len(pool),
+                    min_train_size=args.min_train_size,
+                    train_size_fracs=list(args.train_size_fracs) if args.train_size_fracs else None,
+                )
             print(
                 f"Seed {seed}, threshold >= {train_threshold}: eligible={len(pool)} "
                 f"(leftover_HQ={len(leftover_hq_pool)}, lower_quality={len(lower_quality_pool)}), "
@@ -514,13 +744,52 @@ def main() -> None:
                     subsample_seed=seed,
                     sampling_mode=args.train_sampling_mode,
                 )
+                train_hq_count = int((train_raw[base.BARCODE_COLUMN] >= args.train_priority_min_barcodes).sum())
+                train_lq_count = int(len(train_raw) - train_hq_count)
+                planned_records.append(
+                    {
+                        "seed": seed,
+                        "split_strategy": args.split_strategy,
+                        "split_pool": split_payload["split_pool"],
+                        "split_seed_base": args.split_seed,
+                        "split_seed_effective": split_payload["split_seed_effective"],
+                        "val_seed_effective": split_payload["val_seed_effective"],
+                        "test_seed_effective": split_payload["test_seed_effective"],
+                        "val_is_fixed_across_seeds": split_payload["val_is_fixed_across_seeds"],
+                        "test_is_fixed_across_seeds": split_payload["test_is_fixed_across_seeds"],
+                        "split_val_fraction": val_frac,
+                        "split_test_fraction": test_frac,
+                        "high_quality_min_barcodes": args.train_priority_min_barcodes,
+                        "train_threshold": train_threshold,
+                        "train_size": len(train_raw),
+                        "train_fraction": len(train_raw) / len(pool),
+                        "train_sampling_mode": args.train_sampling_mode,
+                        "train_pool_eligible_size": len(pool),
+                        "train_pool_leftover_hq_size": len(leftover_hq_pool),
+                        "train_pool_lower_quality_size": len(lower_quality_pool),
+                        "train_hq_count": train_hq_count,
+                        "train_lower_quality_count": train_lq_count,
+                        "train_hq_fraction": train_hq_count / max(len(train_raw), 1),
+                        "val_size_raw": len(val_df_raw),
+                        "test_size_raw": len(test_df_raw),
+                        **{
+                            f"train_{key}": value
+                            for key, value in summarize_split_frame(
+                                train_raw,
+                                barcode_column=base.BARCODE_COLUMN,
+                                target_column=base.TARGET_COLUMN,
+                                sequence_column=base.SEQUENCE_COLUMN,
+                            ).items()
+                        },
+                    }
+                )
+                if args.preview_only:
+                    continue
                 train_df, val_df, test_df, scaler = base.prepare_train_val_test_for_run(
                     train_raw,
                     val_df_raw,
                     test_df_raw,
                 )
-                train_hq_count = int((train_raw[base.BARCODE_COLUMN] >= args.train_priority_min_barcodes).sum())
-                train_lq_count = int(len(train_raw) - train_hq_count)
                 split_hashes = {
                     "train_row_id_hash": hash_row_ids(train_df),
                     "val_row_id_hash": hash_row_ids(val_df),
@@ -530,7 +799,7 @@ def main() -> None:
                 scaler_std = float(scaler.std)
 
                 for setting in settings:
-                    for head_idx, head_name in enumerate(base.PRETRAINED_HEADS):
+                    for head_idx, head_name in selected_heads:
                         for unfreeze_scope in args.unfreeze_scopes:
                             for head_lr in head_lr_grid:
                                 for backbone_lr in backbone_lr_grid:
@@ -577,7 +846,7 @@ def main() -> None:
                                             unfreeze_scope=spec.unfreeze_scope,
                                             frozen_epochs=args.frozen_epochs,
                                             max_epochs=args.max_epochs,
-                                            patience=args.patience,
+                                            patience=effective_patience,
                                             train_batch_size=args.train_batch_size,
                                             head_lr=spec.head_lr,
                                             backbone_lr=spec.backbone_lr,
@@ -642,6 +911,10 @@ def main() -> None:
                                         "head_lr": spec.head_lr,
                                         "backbone_lr": spec.backbone_lr,
                                         "weight_decay": args.weight_decay,
+                                        "max_epochs_requested": args.max_epochs,
+                                        "patience_requested": args.patience,
+                                        "effective_patience": effective_patience,
+                                        "early_stopping_disabled": bool(args.disable_early_stopping),
                                         **(
                                             {f"train_{k}": v for k, v in train_m.items()}
                                             if train_m is not None
@@ -654,6 +927,7 @@ def main() -> None:
                                                     "pearson",
                                                     "spearman",
                                                     "r2",
+                                                    "r2_cod",
                                                     "pearson_sq",
                                                     "loss_standardized",
                                                 )
@@ -702,7 +976,40 @@ def main() -> None:
                                     hist["train_sampling_mode"] = spec.train_sampling_mode
                                     hist["head_lr"] = spec.head_lr
                                     hist["backbone_lr"] = spec.backbone_lr
+                                    hist["max_epochs_requested"] = args.max_epochs
+                                    hist["patience_requested"] = args.patience
+                                    hist["effective_patience"] = effective_patience
+                                    hist["early_stopping_disabled"] = bool(args.disable_early_stopping)
                                     history_records.append(hist)
+
+    planned_df = pd.DataFrame(planned_records)
+    membership_df = pd.concat(membership_records, ignore_index=True) if membership_records else pd.DataFrame()
+    membership_summary_df = build_split_membership_summary(
+        membership_df,
+        barcode_column=base.BARCODE_COLUMN,
+        target_column=base.TARGET_COLUMN,
+    )
+
+    if not planned_df.empty:
+        planned_df.to_csv(args.outdir / "threshold_planned_grid.csv", index=False)
+    if not membership_df.empty:
+        membership_df.to_csv(args.outdir / "split_membership_rows.csv", index=False)
+    if not membership_summary_df.empty:
+        membership_summary_df.to_csv(args.outdir / "split_membership_summary.csv", index=False)
+
+    if args.preview_only:
+        print("\nPreview only. Wrote:")
+        for path in [
+            args.outdir / "threshold_planned_grid.csv",
+            args.outdir / "split_membership_rows.csv",
+            args.outdir / "split_membership_summary.csv",
+            args.outdir / "run_manifest.json",
+        ]:
+            if path.exists():
+                print(f"  {path}")
+        elapsed_seconds = time.time() - overall_start_time
+        print(f"\nTotal runtime: {elapsed_seconds:.1f} seconds ({elapsed_seconds / 60.0:.2f} minutes)")
+        return
 
     if len(run_records) == 0:
         raise RuntimeError("No runs were executed. Check thresholds/min_train_size/settings.")
@@ -749,6 +1056,7 @@ def main() -> None:
             "train_pearson",
             "train_spearman",
             "train_r2",
+            "train_r2_cod",
             "train_pearson_sq",
             "train_loss_standardized",
             "val_mae",
@@ -756,6 +1064,7 @@ def main() -> None:
             "val_pearson",
             "val_spearman",
             "val_r2",
+            "val_r2_cod",
             "val_pearson_sq",
             "val_loss_standardized",
             "test_mae",
@@ -763,6 +1072,7 @@ def main() -> None:
             "test_pearson",
             "test_spearman",
             "test_r2",
+            "test_r2_cod",
             "test_pearson_sq",
             "test_loss_standardized",
             "best_epoch",
@@ -794,6 +1104,7 @@ def main() -> None:
             "test_pearson",
             "test_spearman",
             "test_r2",
+            "test_r2_cod",
             "test_pearson_sq",
             "test_loss_standardized",
             "initial_trainable_params",
@@ -819,6 +1130,9 @@ def main() -> None:
         output_paths.append(args.outdir / "zero_shot_by_seed.csv")
     output_paths.extend(
         [
+            args.outdir / "threshold_planned_grid.csv",
+            args.outdir / "split_membership_rows.csv",
+            args.outdir / "split_membership_summary.csv",
             args.outdir / "learning_curve_runs.csv",
             args.outdir / "learning_curve_histories.csv",
             args.outdir / "learning_curve_summary_mean_std.csv",

@@ -111,7 +111,7 @@ python src/learn/pretrained_registry.py --task-family utr5 --target-family hani_
 
 ## Current state (as of repo reorg)
 
-See `plan/hpo_repo_reboot_plan.md` for the ongoing inventory. The
+See `../../plan/learn/hpo_repo_reboot_plan.md` for the ongoing inventory. The
 agent-facing summary lives in `run_registry/best_runs.csv` and is the
 source of truth — run `pretrained_registry.py --summary` any time you
 need a fresh snapshot.
