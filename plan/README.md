@@ -67,7 +67,7 @@ several folders. Cross-link freely when a plan spans multiple systems.
 | Part class | Pretraining | Fine-tune | From scratch | Current decision surface | Next action |
 |---|---|---|---|---|---|
 | Enhancer | BODA2/Malinois checkpoint available | Lib1 transfer and barcode-count studies mostly complete | Current in-house scratch evidence is weak | `finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | Decide which enhancer notebooks to keep canonical; run only the missing scratch comparison if it changes decisions. |
-| Promoter | Public pretraining complete | Pending | Public scratch/HPO roots exist | `pretraining_CRE_public_data/promoter_intron_inhouse_pretrained_eval_may2026.ipynb` | Compare scratch and fine-tune on in-house promoter data. |
+| Promoter | Public pretraining complete | Pending | Public scratch/HPO roots exist | `pretrain_CRE_inhouse_data/promoter_intron_inhouse_pretrained_eval_may2026.ipynb` | Compare scratch and fine-tune on in-house promoter data. |
 | 5 Prime UTR | Hani Lib1/Lib2 pretraining complete | Phase 2 v2 and June in-house HPO complete | Phase 3 Lib1+Lib2 scratch complete | Phase 2 v2, Phase 3 scratch, and June in-house notebooks | Pick the seed checkpoint for combinatorial scenario 2. |
 | Intron | Seelig pretraining complete | Pipeline in progress | Public scratch complete | Seelig pretraining notebook plus promoter/intron one-shot notebook | Resolve in-house one-shot mismatch before fine-tune claims. |
 | 3 Prime UTR | Hani pretraining complete | Pending | Public scratch/HPO roots exist | Public CRE/PARADE summary notebooks | Run from-scratch versus fine-tune comparison. |

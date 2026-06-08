@@ -1,9 +1,9 @@
 # Public CRE Pretraining Analysis Index
 
-This directory is the notebook layer for public-data pretraining, checkpoint
-promotion, and public-to-in-house diagnostic evaluation. The executable HPO
-configs and launchers live under `src/learn`; generated run roots live under
-ignored `src/learn/outputs/` or `src/learn/local_artifacts/`.
+This directory is the notebook layer for public-data pretraining and checkpoint
+promotion. The executable HPO configs and launchers live under `src/learn`;
+generated run roots live under ignored `src/learn/outputs/` or
+`src/learn/local_artifacts/`.
 
 ## Current Canonical Notebooks
 
@@ -14,7 +14,12 @@ ignored `src/learn/outputs/` or `src/learn/local_artifacts/`.
 | `hani_utr_basset_branched_hpo_presentation_summary.ipynb` | Hani UTR BassetBranched HPO explanation and presentation context. | reference |
 | `intron_seelig_a5ss_sd1_pretraining_hpo_decision_may2026.ipynb` | Seelig A5SS SD1 intron pretraining decision. | canonical intron pretraining decision |
 | `hani_utr5_lib1_lib2_phase3_scratch_hpo_analysis_may2026.ipynb` | 5 Prime UTR Lib1+Lib2 from-scratch Phase 3 HPO and Phase 2 comparison. | canonical 5 Prime scratch comparison |
-| `promoter_intron_inhouse_pretrained_eval_may2026.ipynb` | One-shot in-house promoter and intron evaluation using promoted public checkpoints. | canonical in-house diagnostic |
+
+## See Also
+
+Promoter/intron one-shot diagnostics that score in-house Lib1 data with
+promoted public checkpoints live in
+`../pretrain_CRE_inhouse_data/promoter_intron_inhouse_pretrained_eval_may2026.ipynb`.
 
 ## Output Policy
 

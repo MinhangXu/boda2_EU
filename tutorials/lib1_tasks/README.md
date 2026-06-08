@@ -36,6 +36,10 @@ answers, the run/output paths it reads, and the decision it is meant to support.
     Phase 3 scratch-HPO analysis.
   - Presentation-ready CSV/PNG/SVG outputs live under `presentation_plots/`.
   - See `pretraining_CRE_public_data/README.md` for canonical notebook status.
+- `pretrain_CRE_inhouse_data/`
+  - Diagnostics that apply pretrained public CRE checkpoints to in-house Lib1
+    data before a dedicated fine-tuning pipeline exists.
+  - See `pretrain_CRE_inhouse_data/README.md` for canonical notebook status.
 - `fine_tuning/enhancer_finetune_w_boda_pretrain/`
   - Enhancer Lib1 fine-tuning and learning-curve notebooks connected to
     `src/finetune/finetune_sweep_scripts/lib1_enhancer/`.
@@ -64,7 +68,7 @@ one of the thematic subdirectories when touched again.
 | Hani 5'UTR Phase 2 fine-tuning | active/canonical v2 | `fine_tuning/fivePrime_finetune_w_lib1_hani_pretrain/hani_utr5_lib2_phase2_v2_finetune_analysis_may2026.ipynb` |
 | Hani 5'UTR Phase 3 scratch HPO | active | `pretraining_CRE_public_data/hani_utr5_lib1_lib2_phase3_scratch_hpo_analysis_may2026.ipynb` |
 | In-house 5'UTR PARADE/BODA HPO | active | `fine_tuning/fivePrime_finetune_w_lib1_hani_pretrain/inhouse_utr5_parade_resnet_small_hpo_analysis_jun2026.ipynb` |
-| Promoter/Intron in-house one-shot | active/reference | `pretraining_CRE_public_data/promoter_intron_inhouse_pretrained_eval_may2026.ipynb` |
+| Promoter/Intron in-house one-shot | active/reference | `pretrain_CRE_inhouse_data/promoter_intron_inhouse_pretrained_eval_may2026.ipynb` |
 | Enhancer Lib1 fine-tuning | active/reference | notebooks under `fine_tuning/enhancer_finetune_w_boda_pretrain/` |
 
 ## Cleanup Companion

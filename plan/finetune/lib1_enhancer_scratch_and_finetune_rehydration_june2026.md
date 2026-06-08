@@ -15,7 +15,7 @@ It is not a commit checklist. Some notebooks are intentionally untracked in this
 
 | Thread | Main question | Main result from current local evidence | Where to look |
 |---|---|---|---|
-| Scratch from in-house enhancer data | Can `BassetVL` or `ResNet1DRegressor` learn Lib1 enhancer activity from scratch? | Not convincingly. Registered scratch runs have held-out test R2 mostly near 0.00-0.03, even when train R2 is high. | `src/learn/configs/enhancer/bashor_in_house/`, `src/learn/run_registry/runs.csv`, `tutorials/lib1_tasks/fine_tuning/enhancer_finetune_w_boda_pretrain/lib1_scratch_basic_sweep_diagnostics_and_test_eval.ipynb` |
+| Scratch from in-house enhancer data | Can `BassetVL` or `ResNet1DRegressor` learn Lib1 enhancer activity from scratch? | Not convincingly. Registered scratch runs have held-out test R2 mostly near 0.00-0.03, even when train R2 is high. | `src/learn/configs/enhancer/bashor_in_house/`, `src/learn/run_registry/runs.csv`, this plan's scratch feasibility recap |
 | BODA2/Malinois checkpoint transfer | Does the pretrained enhancer checkpoint give a useful starting point? | Yes. Transfer / fine-tuning reaches much stronger held-out signal than scratch, especially with RC augmentation and deeper unfreezing. | `src/finetune/cache/lib1_enhancer/`, `src/finetune/learning_curve/lib1_enhancer_*` |
 | HQ-first learning curves | How much does more training data help when high-barcode sequences are prioritized first? | More data helps, especially for `full` and `conv3_plus`, but the HQ-first curriculum entangles train size with quality composition. | `lib1_enhancer_targeted_apr2026`, `targeted_finetune_learning_curve_HQ_split_apr1_2026.ipynb` |
 | Random-split / AL-readiness | Does the story hold when train/val/test are random per seed? | The random split is harder and more conservative: best test R2 is about 0.11-0.125, with useful but modest rank signal. | `lib1_enhancer_targeted_random_all_per_seed_apr2026`, `lib1_enhancer_followup_diagnostic_random_split_apr2026_v1` |
@@ -234,7 +234,6 @@ Fine-tuning / transfer:
 
 Scratch / from-scratch:
 
-- `tutorials/lib1_tasks/fine_tuning/enhancer_finetune_w_boda_pretrain/lib1_scratch_basic_sweep_diagnostics_and_test_eval.ipynb`
 - `tutorials/lib1_tasks/extract_single_enhancer_output_HPO.ipynb`
 
 Barcode / replicate-count follow-ups:
@@ -266,7 +265,9 @@ Useful artifacts:
 
 - `src/learn/configs/enhancer/bashor_in_house/bashor_lab_collab_thread2_scratch_sweeps.md`
 - `src/learn/run_registry/runs.csv`
-- `lib1_scratch_basic_sweep_diagnostics_and_test_eval.ipynb`
+- this rehydration plan and the run registry; the older
+  `lib1_scratch_basic_sweep_diagnostics_and_test_eval.ipynb` notebook was
+  deleted as obsolete on 2026-06-08
 
 ### Thread 2: BODA2/Malinois Transfer Baseline
 
