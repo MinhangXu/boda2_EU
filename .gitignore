@@ -32,11 +32,22 @@ lightning_logs/
 
 # Generated experiment state
 /src/learn/outputs/
+/src/learn/derived_data/
+/src/learn/local_artifacts/
 /src/learn/*__*/
 /src/finetune/cache/
 /src/finetune/analyses_cache*/
-/src/finetune/learning_curve/*/cache/
-/src/finetune/learning_curve/*/learning_curve_histories.csv
+# Generated fine-tuning result trees. Historical tracked summaries stay tracked;
+# force-add deliberate new summaries only when they become curated references.
+/src/finetune/learning_curve/*
+
+# Generated notebook-analysis spillover. Commit curated scorecards/figures, not
+# raw prediction tables or per-epoch dumps.
+/tutorials/lib1_tasks/**/archive/
+/tutorials/lib1_tasks/**/raw_predictions/
+/tutorials/lib1_tasks/**/*predictions.csv
+/tutorials/lib1_tasks/**/*prediction_rows.csv
+/tutorials/lib1_tasks/**/*per_epoch*.csv
 
 # Data files, genomics
 *.fasta

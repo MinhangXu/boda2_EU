@@ -19,11 +19,25 @@ from run `1mmy39ku` on Hani/Goodarzi 5'UTR Lib2.
   - Launches one seed per GPU slot and combines outputs.
 - `combine_hani_utr5_lib2_outputs.py`
   - Combines per-seed CSV summaries into an output-root `combined/` directory.
+- `inhouse_utr5_parade_resnet_finetune.py`
+  - Fine-tunes the BODA ResNet1D `1mmy39ku` artifact and the local PARADE UTR5
+    checkpoint on in-house `FivePrime` rows.
+  - Uses 1+, 2+, 3+ training pools. By default, it samples 15% of
+    `number_of_barcodes >= 8` rows as a validation/test heldout pool and
+    supplements the remaining high-quality rows back into training.
+  - Tests cell-type heads/conditions and shared unfreeze-scope names
+    (`head_only`, `last_stage_plus_head`, `full`) across model families.
+- `run_inhouse_utr5_parade_resnet_small_hpo_parallel.sh`
+  - Shards the in-house HPO by model family, barcode threshold, seed, and cell
+    head across GPU slots, then combines outputs.
+- `combine_inhouse_utr5_finetune_outputs.py`
+  - Combines per-job in-house HPO outputs into `combined/`.
 
 ## Quick Preview
 
 ```bash
 PREVIEW_ONLY=1 bash src/finetune/finetune_sweep_scripts/hani_lib1_in_house_lib1_5Prime/run_hani_utr5_lib2_finetune_parallel.sh
+PREVIEW_ONLY=1 bash src/finetune/finetune_sweep_scripts/hani_lib1_in_house_lib1_5Prime/run_inhouse_utr5_parade_resnet_small_hpo_parallel.sh
 ```
 
 ## Default Run
