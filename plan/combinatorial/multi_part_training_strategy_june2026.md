@@ -11,7 +11,7 @@ usable as context. It connects enhancer, promoter, 5 Prime UTR, intron, and
 | Part class | Pretraining | Fine-tune | From scratch | Immediate next question |
 |---|---|---|---|---|
 | Enhancer | BODA2/Malinois checkpoint available | In-house Lib1 fine-tune mostly complete | Weak current evidence | Run/commit the cleaner scratch comparison only if needed; otherwise use transfer as the baseline. |
-| Promoter | Public pretraining complete | Pending | Pending/current public scratch exists | Compare public scratch, in-house scratch, and fine-tune. |
+| Promoter | Legacy in-house e7/e30 pretraining exists, but needs a split-safe rerun | Pending | Pending for new Lib1 | Compare legacy e7/e30 pretraining, Lib1 scratch, and legacy-to-Lib1 fine-tune. |
 | 5 Prime UTR | Hani Lib1/Lib2 pretraining complete | Phase 2 and June in-house HPO complete | Phase 3 scratch complete | Decide whether Phase 2 fine-tune or Phase 3 scratch is the better seed for combinatorial work. |
 | Intron | Seelig pretraining complete | Pipeline being figured out | Public scratch complete | Fix the in-house transfer mismatch before combinatorial inclusion. |
 | 3 Prime UTR | Hani pretraining complete | Pending | Pending/current public scratch exists | Run from-scratch and fine-tune comparisons. |

@@ -31,7 +31,7 @@ Biological task framing:
 
 Input:
 
-> **Synthetic DNA construct**, approximately **1500 bp** for the intended full Expression Unit use case.
+> **Synthetic DNA construct**, approximately **7 kb** for the intended full Expression Unit use case, with the combined variable regions usually **<2 kb**.
 
 Output targets:
 
@@ -174,6 +174,7 @@ The hardware/software constraint is real and comes from the current upstream Evo
 - Evo2 20B, 40B, and 1B-base require FP8/Transformer Engine and a NVIDIA Hopper GPU for numerical accuracy.
 - Evo2 7B models can run without Transformer Engine in bfloat16, but still need the newer CUDA/Python/Torch stack and an actually supported modern GPU.
 - NVIDIA's Evo2 NIM support matrix for the 40B model lists 2x H100 80 GB or 1x H200 144 GB, with driver 535+ and 100 GB disk for container/model storage.
+- FlashAttention 2, used by the Evo2 light install path, supports Ampere, Ada, or Hopper GPUs on CUDA. The current Pascal GPUs are older than that support target.
 
 Current local machine:
 
@@ -200,22 +201,175 @@ CPU-only experiment might be theoretically possible with enough engineering, but
 it would be very slow, would not match the released GPU inference path, and is
 not the route to use for this benchmark.
 
+### Transformer Engine / 7B runtime decision
+
+We do **not** need to plan around Evo2 20B/40B for the first benchmark. The current decision is:
+
+1. Use **Evo2 7B** as the first real foundation-model extractor.
+2. Treat Transformer Engine/FP8 as a diagnostic only, not a project requirement.
+3. Do not purchase or reserve Hopper hardware only for larger Evo2 models until 7B has been tested against BODA baselines.
+
+The local runtime checker currently reports:
+
+```bash
+conda run -n boda_evo2_env python src/foundation/evo2/check_evo2_runtime.py
+```
+
+```text
+Official local Evo2 OS path: YES
+FP8/Transformer Engine stack: NOT READY
+Evo2 7B light extraction path: NOT_READY
+Cached embedding regression/BODA downstream path: READY
+```
+
+Interpretation:
+
+- Transformer Engine is not installed in `boda_evo2_env`, but more importantly the visible GPUs are compute capability 6.0/6.1, not Hopper-class.
+- Evo2 7B does not require Transformer Engine, but the official light install still depends on a modern CUDA/Torch/FlashAttention path. FlashAttention 2's CUDA path targets Ampere/Ada/Hopper, while this server has Pascal GPUs.
+- This server should remain the BODA/cached-embedding regression host. Real Evo2 7B embeddings should be extracted on a supported GPU host, then copied back as cached `.pt` artifacts.
+
+### Portable host qualification protocol
+
+This plan should be usable on another local machine by a Codex agent. Carry at least these files:
+
+```text
+plan/phase1_lib1/learn/evo2_foundation_encoded_seq2expr_plan.md
+src/foundation/evo2/check_evo2_runtime.py
+src/foundation/evo2/extract_evo2_embeddings.py
+```
+
+Ask Codex on the target machine to run:
+
+```bash
+python src/foundation/evo2/check_evo2_runtime.py
+python src/foundation/evo2/check_evo2_runtime.py --json > evo2_runtime_report.json
+```
+
+If the repo is not present, ask Codex to collect the equivalent facts:
+
+```bash
+python -V
+uname -a || true
+sw_vers || true
+nvidia-smi --query-gpu=index,name,memory.total,compute_cap,driver_version --format=csv,noheader,nounits || true
+python - <<'PY'
+import platform
+print("platform", platform.platform())
+try:
+    import torch
+    print("torch", torch.__version__)
+    print("cuda runtime", torch.version.cuda)
+    print("cuda available", torch.cuda.is_available())
+    print("bf16", torch.cuda.is_bf16_supported() if torch.cuda.is_available() else None)
+    print("mps", getattr(torch.backends, "mps", None).is_available() if hasattr(torch.backends, "mps") else None)
+    for i in range(torch.cuda.device_count() if torch.cuda.is_available() else 0):
+        p = torch.cuda.get_device_properties(i)
+        print(i, p.name, f"cc={p.major}.{p.minor}", f"vram={p.total_memory/1024**3:.1f} GiB")
+except Exception as e:
+    print("torch import/status failed:", repr(e))
+PY
+python - <<'PY'
+import importlib.util
+for name in ["evo2", "flash_attn", "transformer_engine"]:
+    print(name, bool(importlib.util.find_spec(name)))
+PY
+```
+
+Interpretation rules:
+
+- `READY_TO_TEST`: run the official Evo2 generation test, then a 7 kb embedding smoke test before any full extraction.
+- `POSSIBLE_BUT_VRAM_TIGHT`: try `evo2_7b_base`, batch size 1, one layer, one 7 kb sequence. If it OOMs, do not spend more time locally; use a larger GPU or hosted extraction.
+- `NOT_SUPPORTED_OFFICIALLY_MACOS_NO_CUDA`: use the machine for downstream cached-embedding heads, notebook analysis, or hosted/NIM API clients, not official local Evo2 extraction.
+- `NOT_READY`: missing OS/GPU/package requirements. Do not debug science code until the runtime check improves.
+
+For a promising NVIDIA Linux/WSL2 host, create a separate test environment rather than modifying BODA:
+
+```bash
+conda create -n evo2_7b_probe python=3.12 pip -y
+conda activate evo2_7b_probe
+pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+pip install packaging ninja
+pip install flash-attn==2.8.0.post2 --no-build-isolation
+pip install evo2
+python src/foundation/evo2/check_evo2_runtime.py
+python -m evo2.test.test_evo2_generation --model_name evo2_7b_base
+```
+
+On Blackwell/RTX 50-series GPUs, if the pinned FlashAttention install fails, ask Codex to re-check the current Evo2 README and FlashAttention package notes before changing pins. Do not modify `boda_env` or the BODA-compatible `boda_evo2_env` to solve Evo2 extraction dependencies.
+
+Then run the smallest direct embedding smoke test:
+
+```bash
+python - <<'PY'
+import torch
+from evo2 import Evo2
+
+model = Evo2("evo2_7b_base")
+sequence = "ACGT" * 1750  # 7000 bp
+input_ids = torch.tensor(
+    model.tokenizer.tokenize(sequence),
+    dtype=torch.int,
+).unsqueeze(0).to("cuda:0")
+layer_name = "blocks.28.mlp.l3"
+with torch.no_grad():
+    outputs, embeddings = model(input_ids, return_embeddings=True, layer_names=[layer_name])
+print("embedding shape", tuple(embeddings[layer_name].shape))
+PY
+```
+
+Machine-specific expectations:
+
+- **Apple M3 Max MacBook Pro**: expected to fail official local Evo2 qualification because Evo2's local path is CUDA/NVIDIA, not Apple MPS. It can still run analysis, BODA cached-embedding regressors on CPU/MPS if dependencies install, and hosted API clients.
+- **Home desktop with RTX 5080**: promising but not guaranteed. NVIDIA lists the RTX 5080 as Blackwell, CUDA capability 12.0, and 16 GB GDDR7. The architecture is modern enough, but 16 GB VRAM may be tight for Evo2 7B at 7 kb. Use Linux or WSL2, recent NVIDIA drivers, PyTorch CUDA 12.8 wheels, then run the official `evo2_7b_base` generation and one-sequence embedding tests. If 16 GB OOMs, move extraction to a 24-48+ GB NVIDIA GPU.
+
+Source URLs for re-checking on the target machine:
+
+```text
+https://github.com/ArcInstitute/evo2
+https://pypi.org/project/flash-attn/
+https://www.nvidia.com/en-gb/geforce/graphics-cards/50-series/rtx-5080/
+https://developer.nvidia.com/cuda-gpus
+```
+
+### Is Evo2 7B enough for this task?
+
+For the current biological task, **Evo2 7B is the right first model to test**.
+
+Reasons:
+
+- The full synthetic construct is about **7 kb**, which fits within the `evo2_7b_base` 8K context if the final serialized sequence truly stays below the model limit. If sequence length can exceed 8K after adapters/tags/flanks, use `evo2_7b_262k` or `evo2_7b` rather than moving to 20B/40B.
+- The variable regions together are **<2 kb**, so the key supervised signal is likely local motif grammar plus medium-range regulatory context. A 7B genomic foundation model should be a strong enough frozen encoder to test whether foundation embeddings help at all.
+- Larger models may improve representation quality, but they are not the first bottleneck. For this benchmark, pooling/reduction strategy, layer choice, exact construct context, target noise, split design, and comparison to BODA baselines are more likely to determine whether the experiment is informative.
+
+Recommended 7B-specific ablation:
+
+1. **Full construct embedding**: all ~7 kb, mean/last/token-reduction over the full sequence.
+2. **Variable-window embedding**: extract the same layer but reduce only over annotated variable regions.
+3. **Segment-aware embedding**: concatenate reductions over enhancer/promoter/UTR/intron/barcode/terminator or other known EU components.
+4. **Variable-only sequence embedding**: <2 kb variable regions stitched in fixed order, used as a lower-cost control.
+
+Decision rule:
+
+- If 7B embeddings beat or complement BODA one-hot baselines on validation/test with identical splits, continue with 7B and improve pooling/head design.
+- If 7B embeddings are weak, do not jump straight to 20B/40B. First test layer choice, segment-aware pooling, AlphaGenome/Borzoi-style functional prediction features, and whether the full 7 kb fixed context is washing out the variable-region signal.
+- Consider larger Evo2 models only after the 7B pipeline is technically stable and the validation results show a clear reason to spend the extra hardware/runtime.
+
 Recommended upgrade tracks:
 
-1. **Practical 7B embedding extractor on this machine**
+1. **Practical 7B embedding extractor**
    - Add one modern high-memory bf16-capable GPU, preferably `L40S 48 GB`, `RTX 6000 Ada 48 GB`, `A100 80 GB`, or `H100/H200`.
    - Use this for `evo2_7b_base`, `evo2_7b`, or `evo2_7b_262k` extraction, starting with short CRE/EU sequences and small batch sizes.
    - This is the cheapest useful local path, but it does not unlock FP8-required 1B/20B/40B models unless the card is Hopper and the FP8 stack passes tests.
 
-2. **Recommended Evo2 research extractor**
+2. **Optional Hopper research extractor**
    - Install at least `1x H100 80 GB PCIe` or `1x H200`.
-   - Target 7B plus Hopper-required FP8 models where memory allows, then validate actual model/batch/context combinations with Evo2's generation/embedding tests.
-   - This is the most balanced route if the goal is local extraction, not full production self-hosting.
+   - Only prioritize this if we decide larger FP8-required models are scientifically necessary after the 7B benchmark.
+   - Validate actual model/batch/context combinations with Evo2's generation/embedding tests.
 
-3. **40B / NIM-class local serving**
+3. **Deferred 40B / NIM-class local serving**
    - Plan for `2x H100 80 GB` or `1x H200 144 GB`, matching NVIDIA's NIM matrix.
    - Add enough local NVMe space for model/container caches and generated embedding artifacts; 1-2 TB free space is more comfortable than the current 190 GB free.
-   - Expect PCIe-only multi-GPU serving to be slower than NVLink/SXM systems. It may still be workable for offline embedding extraction if throughput requirements are modest.
+   - Defer this unless 7B/other feature models leave a clear unmet need.
 
 Before purchasing, confirm:
 
@@ -233,7 +387,7 @@ Operational rollout:
 3. Verify `nvidia-smi`, thermals, persistence mode, and a small CUDA matmul.
 4. Build a separate `evo2_local_env` or Docker/Apptainer image with Python 3.11/3.12, Torch 2.7.x, Flash Attention, optional Transformer Engine, and Evo2.
 5. Run upstream Evo2 generation tests before extracting any science embeddings.
-6. Run a tiny real extraction on 10-100 CRE sequences, then the Hani 5'UTR layer panel, then in-house Lib1 enhancer/EU sequences.
+6. Run a tiny real extraction on 10-100 CRE/EU sequences, then the Hani 5'UTR layer panel, then in-house Lib1 enhancer/EU sequences.
 
 ---
 
@@ -283,7 +437,7 @@ source_dataset
 source_row_index
 ```
 
-For the full Expression Unit setting, `sequence` should be the full **synthetic DNA construct**, intended length around **1500 bp**.
+For the full Expression Unit setting, `sequence` should be the full **synthetic DNA construct**, intended length around **7 kb**. The known variable regions should also be annotated because their combined length is usually **<2 kb**, and variable-region or segment-aware pooling may be more informative than whole-sequence mean pooling.
 
 For current lib1 enhancer testing, the pipeline can still support the existing shorter padded/flanked sequence representation, but the code should not hard-code 600 bp assumptions into the embedding model family.
 
@@ -294,7 +448,7 @@ Recommended CLI args:
 --id_column construct_id
 --target_columns RNA_target protein_target
 --split_column split
---input_len 1500
+--input_len 7000
 ```
 
 ---
@@ -897,14 +1051,14 @@ python src/foundation/evo2/extract_evo2_embeddings.py \
   --target_columns RNA_target protein_target \
   --model_name evo2_7b \
   --layers blocks.8 blocks.16 blocks.28 blocks.28.mlp.l3 final \
-  --output_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_1500bp_v1
+  --output_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_7kb_v1
 ```
 
 ### Layer probing
 
 ```bash
 python src/learn/evo2/run_evo2_layer_probe.py \
-  --embedding_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_1500bp_v1 \
+  --embedding_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_7kb_v1 \
   --target_columns RNA_target protein_target \
   --hidden_dim 256 \
   --n_hidden_layers 1 \
@@ -923,7 +1077,7 @@ python src/learn/train.py \
   --data_module EmbeddingRegressionDataModule \
   --model_module EmbeddingMLPRegressor \
   --graph_module EmbeddingRegressionTraining \
-  --embedding_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_1500bp_v1 \
+  --embedding_dir src/learn/local_artifacts/foundation_embeddings/evo2/EU_7kb_v1 \
   --embedding_file embeddings__model-evo2_7b__layer-blocks_28.pt \
   --target_columns RNA_target protein_target \
   --standardize_x true \

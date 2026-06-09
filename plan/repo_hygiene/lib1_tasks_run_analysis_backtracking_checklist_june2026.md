@@ -30,8 +30,8 @@ Canonical enhancer question map:
 
 | Question | Canonical record | Notebook placement | Generated data action |
 |---|---|---|---|
-| Transfer baseline | `plan/finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | early transfer notebooks moved to local-only `archive/` | delete local caches only after the rehydration plan is accepted |
-| Random split / AL readiness | `plan/finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | random-split notebooks moved to local-only `archive/` | keep ignored until no rerun is needed; then delete local roots |
+| Transfer baseline | `plan/phase1_lib1/finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | early transfer notebooks moved to local-only `archive/` | delete local caches only after the rehydration plan is accepted |
+| Random split / AL readiness | `plan/phase1_lib1/finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | random-split notebooks moved to local-only `archive/` | keep ignored until no rerun is needed; then delete local roots |
 | Barcode training quality | `may13_2026_bc_training_eval.ipynb` plus `barcode_range_comparable_bins_decision_analysis_may2026.ipynb` | keep top-level canonical | keep ignored run roots until final barcode policy is written |
 | Barcode test quality | `may13_2026_bc_test_eval.ipynb` | keep top-level canonical | keep ignored run roots until final barcode policy is written |
 | HQ8 multiseed HPO | `may15_2026_hq8_multiseed_hpo_analysis.ipynb` | keep top-level canonical | keep ignored run roots until enhancer decision is final |

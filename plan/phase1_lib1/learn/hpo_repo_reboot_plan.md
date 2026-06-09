@@ -155,7 +155,7 @@ Current problem:
 
 Recommended addition:
 
-- `plan/learn/best_runs_snapshot.md` later, for human-readable summaries
+- `plan/phase1_lib1/learn/best_runs_snapshot.md` later, for human-readable summaries
 - `src/learn/run_registry/` or `metadata/run_registry/`
 - one CSV or YAML manifest with columns like:
   - `cre_part`
