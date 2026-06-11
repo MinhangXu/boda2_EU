@@ -34,6 +34,8 @@ lightning_logs/
 /src/learn/outputs/
 /src/learn/derived_data/
 /src/learn/local_artifacts/
+# Legacy guard: project-shaped HPO roots should live under
+# /src/learn/outputs/hpo_runs/by_project/, not directly in src/learn/.
 /src/learn/*__*/
 /src/finetune/cache/
 /src/finetune/analyses_cache*/

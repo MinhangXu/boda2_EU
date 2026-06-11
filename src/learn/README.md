@@ -24,8 +24,11 @@ This directory is the main training and HPO launcher layer for `boda2_EU`.
   - curated task-oriented scripts for creating sweeps and starting agents
 - `derived_data/`
   - generated intermediate tables that are intentionally reused across runs
+- `outputs/`
+  - ignored generated training state, Lightning scratch directories, and
+    per-W&B-project HPO run roots
 - `local_artifacts/`
-  - saved model tarballs and other run outputs that you want to keep locally
+  - durable saved model tarballs exported by completed runs
 - `run_registry/`
   - machine-readable best-run and sweep-launch bookkeeping
 - `wandb/`
@@ -113,12 +116,13 @@ Set `PILOT=1` before any curated launcher to force a 1-agent / 1-run
 smoke test regardless of the configured `NUM_AGENTS` / `NUM_RUNS`:
 
 ```bash
-PILOT=1 ./launch/utr3_hani_utr_bassetvl_sweep.sh
+PILOT=1 GPU_LIST="0" PARTS="enhancer" MODE=sequential \
+  bash launch/lib1_inhouse_scratch_orchestrator.sh
 ```
 
-The wrapper `launch/run_all_regions_pilot.sh` chains a pilot per CRE
-region — good for verifying that the full config → train → test →
-`runs.csv` chain is healthy before committing real HPO GPU time.
+The orchestrator can run a one-part pilot or the full standardized Lib1
+in-house set. Use `DRY_RUN=1` first when checking GPU allocation without
+creating W&B sweeps.
 
 ## Important Distinction: Source vs Generated State
 
@@ -131,6 +135,7 @@ Treat these as source material:
 Treat these as generated metadata:
 
 - `derived_data/`
+- `outputs/`
 - `local_artifacts/`
 - `wandb/`
 
@@ -144,10 +149,6 @@ The usual local state for a `train_wandb_log.py` run is split across a few place
   - reusable generated inputs
   - example: the combined single-head enhancer table created by `prepare_enhancer_single_head_dataset.py`
   - keep this when regeneration is slow or when you want reproducible HPO inputs
-- `local_artifacts/`
-  - long-lived local outputs produced near the end of successful training
-  - typically contains saved model tarballs copied from the trainer scratch directory
-  - this is the directory to keep if you want a local copy of trained models after a run finishes
 - `wandb/`
   - local W&B cache for sweep agents and runs
   - each `run-*` directory usually contains:
@@ -163,24 +164,35 @@ The usual local state for a `train_wandb_log.py` run is split across a few place
   - successful runs later bundle/copy the final payload into `artifact_path`
   - safe to prune when you no longer need intermediate checkpoints/logs
 - `outputs/hpo_runs/by_project/<wandb_project_name>/`
-  - archived home for generated project-root HPO folders that used to live
-    directly under `src/learn/`
-  - keeps the source/launcher layer readable while preserving local run
-    provenance for inspection
+  - per-W&B-project run roots for HPO sweeps
+  - contains run-id subdirectories with Lightning checkpoints plus
+    `best_checkpoint_model/<run_id>/` convenience copies when
+    `best_checkpoint_dir` is configured
+  - this is the home for directories named like
+    `promoter__bashor_in_house__lib1_allvalid__scratch__promoter_bassetvl/`
+  - do not leave those project-shaped directories directly under `src/learn/`
+- `local_artifacts/<task_family>/<target_family>/<model_family>/...`
+  - durable final model payloads produced near the end of successful training
+  - contains `.tar.gz` archives copied from the trainer scratch directory via
+    `artifact_path`
+  - this is the directory to keep if you want local rerunnable model exports
+    after temporary checkpoints are pruned
 
 Practical workflow:
 
 1. edit configs and launchers under `configs/` and `launch/`
 2. let launchers create or reuse `derived_data/` inputs
 3. monitor active and failed runs via `wandb/`
-4. keep successful final model payloads in `local_artifacts/`
-5. treat `outputs/...` and `outputs/hpo_runs/...` as disposable generated
-   state, not as the system of record
+4. inspect per-project HPO run roots under `outputs/hpo_runs/by_project/`
+5. keep successful final model payloads in `local_artifacts/`
+6. treat `outputs/...` and `outputs/hpo_runs/...` as disposable generated
+   state once W&B cloud history, `run_registry/`, and `local_artifacts/`
+   contain the needed record
 
 Rule of thumb:
 
 - edit: `configs/`, `launch/`, training code
-- inspect: `wandb/`, `run_registry/`
+- inspect: `wandb/`, `run_registry/`, `outputs/hpo_runs/by_project/`
 - keep: `local_artifacts/`, important `derived_data/`
 - feel free to prune later: stale `wandb/run-*`, `wandb/sweep-*`, and temp scratch once you no longer need local debugging context
 
@@ -189,21 +201,32 @@ Rule of thumb:
 Use this split consistently:
 
 - `outputs/`
-  - scratch/training-working directories and task cache folders
-  - examples: `outputs/promoter/deboer_core/utr_bassetvl/bayes/`, `outputs/utr3/hani_rna_activity/utr_bassetvl/bayes/`
-  - safe to prune when you no longer need intermediate checkpoints/logs
+  - ignored generated run state
+  - `outputs/<task_family>/...` is trainer scratch from `default_root_dir`
+  - `outputs/hpo_runs/by_project/<wandb_project>/...` is the tidy home for
+    project-shaped HPO run roots and `best_checkpoint_model/` convenience
+    copies
+  - safe to prune when you no longer need intermediate checkpoints/logs and
+    have preserved the needed W&B/registry/artifact records
 - `local_artifacts/`
-  - final model payloads you intend to keep
-  - examples: `local_artifacts/promoter/...`, `local_artifacts/utr3/...`, `local_artifacts/utr5/...`
+  - final model payloads you intend to keep locally
+  - examples: `local_artifacts/promoter/...`, `local_artifacts/utr3/...`,
+    `local_artifacts/utr5/...`
   - default long-lived local storage for rerunnable model exports
 - `wandb/`
   - W&B local cache (`run-*`, `sweep-*`, debug logs)
   - useful for debugging/recovery; safe to prune if cloud W&B is source of truth
 
-For new in-house enhancer sweeps, follow the same pattern:
+For new standardized HPO sweeps, follow the same pattern:
 
-- scratch/root dir under `outputs/enhancer/bashor_in_house/...`
-- artifact export under `local_artifacts/enhancer/bashor_in_house/...`
+- `default_root_dir` under `outputs/<task_family>/<target_family>/...`
+- `best_checkpoint_dir` under
+  `outputs/hpo_runs/by_project/<wandb_project>/best_checkpoint_model`
+- `artifact_path` under `local_artifacts/<task_family>/<target_family>/...`
+
+If a run creates `src/learn/<wandb_project>/`, treat that as a misplaced
+generated project root. Move it into `outputs/hpo_runs/by_project/` or delete
+it if the corresponding sweep/config has been retired.
 
 The helper script `cleanup_learn_state.sh` can prune generated state while preserving top-level directory scaffolding.
 
@@ -221,24 +244,19 @@ Typical stack:
 
 Current configs / launchers:
 
-- `configs/enhancer/bashor_in_house/lib1_enhancer__scratch_basic__bayes.yml`
-- `configs/enhancer/bashor_in_house/lib1_enhancer__scratch_weighted__bayes.yml`
-- `launch/lib1_enhancer_scratch_compare_loss_modes.sh`
-- `launch/lib1_enhancer_scratch_weighted_sweep.sh`
+- `configs/enhancer/bashor_in_house/resnet1d/lib1_enhancer_no_flank_hq8__scratch_resnet1d__bayes.yml`
+- `configs/enhancer/bashor_in_house/bassetvl/lib1_enhancer_no_flank_hq8__scratch_bassetvl__bayes.yml`
+- `launch/lib1_enhancer_no_flank_hq8_scratch_resnet1d_sweep.sh`
+- `launch/lib1_enhancer_no_flank_hq8_scratch_bassetvl_sweep.sh`
 - `configs/enhancer/malinois_mpra/basset_branched/enhancer__malinois_mpra__basset_branched__transfer_baseline.yml`
 - `launch/enhancer_malinois_basset_branched_baseline.sh`
-- `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_k562__bayes.yml`
-- `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/enhancer__malinois_mpra__basset_nonbranched__single_head_combined__bayes.yml`
-- `launch/enhancer_malinois_basset_nonbranched_single_head_combined_sweep.sh` (legacy config path)
 
 In-house lib1 scratch notes:
 
 - target column: `RNA_DNA_Ratio_log10_scaled`
 - sequence column: `Enhancers`
-- new fastqs1-5 table prep:
-  `python src/learn/prepare_lib1_enhancer_fastqs1_5_dataset.py`
-- current fastqs1-5 scratch HPO uses random 80/10/10 train/val/test splits
-  across all retained rows (`test_min_barcodes: 1`)
+- current no-flank HQ8 scratch HPO uses standardized Lib1 split controls and
+  canonical W&B metric history logging
 - key split controls in sweep configs:
   - `train_min_barcodes`
   - `test_min_barcodes`
@@ -251,8 +269,8 @@ In-house lib1 scratch notes:
 
 Historical note:
 
-- the older combined single-head idea (`combined_activity_zmean`) is currently de-prioritized for near-term runs
-- keep those configs for reproducibility, but prioritize in-house enhancer scratch sweeps first
+- old enhancer basic/weighted/FASTQ1-5 scratch sweeps and non-branched
+  Malinois single-head sweeps were retired in the June 2026 cleanup
 
 ### Promoter
 
@@ -267,11 +285,10 @@ Typical stack:
 
 Related configs / launchers:
 
-- `configs/promoter/deboer_core/utr_bassetvl/promoter__deboer_core__utr_bassetvl__bayes.yml`
-- `configs/promoter/deboer_core/bassetvl/promoter__deboer_core__bassetvl__bayes.yml`
-- `configs/promoter/deboer_core/resnet1d/promoter__deboer_core__resnet1d__bayes.yml`
-- `launch/promoter_deboer_utr_bassetvl_sweep.sh`
-- `launch/promoter_deboer_compare_architectures.sh`
+- `configs/promoter/bashor_in_house/resnet1d/lib1_promoter__scratch_resnet1d__bayes.yml`
+- `configs/promoter/bashor_in_house/promoter_bassetvl/lib1_promoter__scratch_promoter_bassetvl__bayes.yml`
+- `launch/lib1_promoter_scratch_resnet1d_sweep.sh`
+- `launch/lib1_promoter_scratch_promoter_bassetvl_sweep.sh`
 
 ### 5'UTR polysome
 
@@ -283,37 +300,32 @@ Typical stack:
 
 Related files:
 
-- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_1.yml`
-- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__egfp_2.yml`
-- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__mcherry_1.yml`
-- `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__bayes__mcherry_2.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__egfp_1.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__egfp_2.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_1.yml`
 - `configs/utr5/polysome/utr_bassetvl/utr5__polysome__utr_bassetvl__fixed__mcherry_2.yml`
-- `launch/utr5_polysome_utr_bassetvl_sweep.sh`
 - `launch/utr5_polysome_fixed_all.sh`
 - `fixed_utr_train.sh`
 - `tutorials/get_HPO_5utr_polysome.ipynb`
 
-Use `launch/utr5_polysome_utr_bassetvl_sweep.sh` for a proper HPO sweep
-(`LIBRARY=egfp_1|egfp_2|mcherry_1|mcherry_2`) and keep
-`launch/utr5_polysome_fixed_all.sh` for fixed-parameter benchmark reruns.
-This remains distinct from the Hani RNA activity workflow.
+The HPO sweep configs/launcher were retired in the June 2026 cleanup. Keep
+`launch/utr5_polysome_fixed_all.sh` for fixed-parameter benchmark reruns. This
+remains distinct from the Hani RNA activity workflow.
 
 ### 5'UTR Hani RNA activity
 
 Typical stack:
 
 - data: `UTR5_Branched_RNA_Activity_DataModule`
-- model: `UTR_BassetVL`, `BassetBranched`, or `ResNet1DRegressor`
+- model: `BassetBranched` or `ResNet1DRegressor`
 - graph: `CNNBasicTraining`
 
 Related configs / launchers:
 
-- `configs/utr5/hani_rna_activity/utr_bassetvl/utr5__hani_rna_activity__utr_bassetvl__bayes.yml`
-- `configs/utr5/hani_rna_activity/resnet1d/utr5__hani_rna_activity_lib1_lib2__resnet1d__phase3_scratch_bayes.yml`
-- `launch/utr5_hani_lib1_lib2_resnet1d_phase3_scratch_sweep.sh`
+- `configs/utr5/hani_rna_activity/basset_branched/utr5__hani_rna_activity__basset_branched__delta_aux_bayes.yml`
+- `configs/utr5/hani_rna_activity/resnet1d/utr5__hani_rna_activity__resnet1d__cell_conditioned_delta_aux_bayes.yml`
+- `launch/utr5_hani_basset_branched_delta_aux_sweep.sh`
+- `launch/utr5_hani_resnet1d_cell_conditioned_delta_aux_sweep.sh`
 
 Phase 3 Lib1+Lib2 scratch HPO:
 
@@ -336,13 +348,13 @@ Typical stack:
 - data:
   - `UTR3_RNA_Activity_DataModule` (current baseline bayes config)
   - `HaniGoozardi_RNA_Activity_DataModule` (focused historical config)
-- model: `UTR_BassetVL`
+- model: `BassetBranched` or `ResNet1DRegressor`
 - graph: `CNNBasicTraining`
 
 Related configs:
 
-- `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__bayes.yml`
-- `configs/utr3/hani_rna_activity/utr_bassetvl/utr3__hani_rna_activity__utr_bassetvl__focused_bayes__2025-06-16.yml`
+- `configs/utr3/hani_rna_activity/basset_branched/utr3__hani_rna_activity__basset_branched__delta_aux_bayes.yml`
+- `configs/utr3/hani_rna_activity/resnet1d/utr3__hani_rna_activity__resnet1d__cell_conditioned_delta_aux_bayes.yml`
 
 ## Run Recovery
 
@@ -383,14 +395,13 @@ Authored configs now live under:
 
 - `configs/enhancer/bashor_in_house/`
 - `configs/enhancer/malinois_mpra/basset_branched/`
-- `configs/legacy/enhancer/malinois_mpra/basset_nonbranched/`
-- `configs/promoter/deboer_core/bassetvl/`
-- `configs/promoter/deboer_core/resnet1d/`
-- `configs/promoter/deboer_core/utr_bassetvl/`
+- `configs/promoter/bashor_in_house/`
 - `configs/utr5/polysome/utr_bassetvl/`
-- `configs/utr5/hani_rna_activity/utr_bassetvl/`
-- `configs/utr3/hani_rna_activity/utr_bassetvl/`
-- `configs/introns/placeholder/utr_bassetvl/` (template only; no data yet — see `configs/introns/README.md`)
+- `configs/utr5/hani_rna_activity/`
+- `configs/utr3/hani_rna_activity/`
+- `configs/introns/bashor_in_house/`
+- `configs/introns/seelig_2015/`
+- `configs/introns/placeholder/utr_bassetvl/` (template only; see `configs/introns/README.md`)
 
 This layout keeps model comparisons local to one biological task: add a sibling
 model-family directory under the same target when you want an apples-to-apples
@@ -412,22 +423,29 @@ Key docs:
 
 Current task-oriented launchers:
 
-- `launch/lib1_enhancer_scratch_compare_loss_modes.sh`
-- `launch/lib1_enhancer_scratch_weighted_sweep.sh`
 - `launch/enhancer_malinois_basset_branched_baseline.sh`
-- `launch/enhancer_malinois_basset_nonbranched_single_head_combined_sweep.sh` (legacy / archived)
-- `launch/promoter_deboer_compare_architectures.sh`
-- `launch/promoter_deboer_utr_bassetvl_sweep.sh`
-- `launch/utr3_hani_utr_bassetvl_sweep.sh`
-- `launch/utr5_hani_utr_bassetvl_sweep.sh`
-- `launch/utr5_polysome_utr_bassetvl_sweep.sh`
+- `launch/lib1_inhouse_scratch_orchestrator.sh`
+- `launch/lib1_promoter_scratch_resnet1d_sweep.sh`
+- `launch/lib1_promoter_scratch_promoter_bassetvl_sweep.sh`
+- `launch/lib1_intron_scratch_resnet1d_sweep.sh`
+- `launch/lib1_threeprime_scratch_resnet1d_sweep.sh`
+- `launch/lib1_threeprime_scratch_utr_bassetvl_sweep.sh`
+- `launch/lib1_fiveprime_scratch_resnet1d_sweep.sh`
+- `launch/lib1_fiveprime_scratch_utr_bassetvl_sweep.sh`
+- `launch/lib1_enhancer_no_flank_hq8_scratch_resnet1d_sweep.sh`
+- `launch/lib1_enhancer_no_flank_hq8_scratch_bassetvl_sweep.sh`
+- `launch/introns_seelig_a5ss_sd1_basset_branched_sweep.sh`
+- `launch/utr3_hani_basset_branched_delta_aux_sweep.sh`
+- `launch/utr3_hani_resnet1d_cell_conditioned_delta_aux_sweep.sh`
+- `launch/utr5_hani_basset_branched_delta_aux_sweep.sh`
+- `launch/utr5_hani_resnet1d_cell_conditioned_delta_aux_sweep.sh`
+- `launch/utr_hani_resnet1d_cell_conditioned_delta_aux_sweeps.sh`
 - `launch/utr5_polysome_fixed_all.sh`
-- `launch/run_all_regions_pilot.sh` — orchestrates a 1-agent / 1-run pilot across every region (respects `PILOT=1`, `GPU_LIST`, and `REGIONS`)
 
 ## Near-Term Priorities
 
-1. keep enhancer as the top reboot target
-   - first run path: in-house lib1 scratch (`basic` or `weighted`) under `configs/enhancer/bashor_in_house/`
+1. keep the standardized Lib1 in-house orchestrator as the main scratch-HPO surface
+   - run path: `launch/lib1_inhouse_scratch_orchestrator.sh`
 2. preserve the older 5'UTR polysome benchmark as a distinct task family
 3. `run_registry/runs.csv` is now auto-populated; promote winning runs to
    `run_registry/best_runs.csv` and rely on `pretrained_registry.py`
@@ -435,4 +453,5 @@ Current task-oriented launchers:
 4. keep config naming comparison-friendly (verbose scheme
    `<region>__<target>__<mode>__<model>`) so additional model families
    can be evaluated side by side without touching W&B projects
-5. onboard the introns data module (`configs/introns/` is reserved)
+5. prune stale generated outputs after exporting any run metadata needed for
+   active decision notebooks

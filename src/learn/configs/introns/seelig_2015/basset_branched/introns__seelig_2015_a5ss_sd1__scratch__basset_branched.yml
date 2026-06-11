@@ -14,7 +14,7 @@ parameters:
   artifact_path:
     value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/introns/seelig_2015/a5ss_sd1/basset_branched/scratch_bayes
   best_checkpoint_dir:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/introns__seelig_2015_a5ss_sd1__scratch__basset_branched/best_checkpoint_model
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/hpo_runs/by_project/introns__seelig_2015_a5ss_sd1__scratch__basset_branched/best_checkpoint_model
   default_root_dir:
     value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/introns/seelig_2015/a5ss_sd1/basset_branched/scratch_bayes
   logger_project:

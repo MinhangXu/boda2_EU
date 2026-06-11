@@ -1,0 +1,160 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: introns__bashor_in_house__lib1_intron_modal80__scratch__resnet1d
+method: bayes
+metric:
+  name: val_pearson
+  goal: maximize
+parameters:
+  epoch_eval_splits:
+    value: [train, val, test]
+  data_module:
+    value: Lib1IntronDataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/introns/bashor_in_house/lib1_intron_modal80_fastqs1_5__learn_ready.tsv
+  sep:
+    value: tab
+  sequence_column:
+    value: Intron
+  target_column:
+    value: log2_RNA_DNA
+  barcode_column:
+    value: n_barcodes
+  padded_seq_len:
+    value: 80
+  padding_mode:
+    value: none
+  normalize:
+    value: true
+  test_min_barcodes:
+    value: 8
+  train_min_barcodes:
+    value: 1
+  val_frac_within_hq:
+    value: 0.2
+  test_frac_within_hq:
+    value: 0.2
+  val_size_within_hq:
+    value: 250
+  test_size_within_hq:
+    value: 250
+  train_size_frac:
+    value: 1.0
+  train_sampling_mode:
+    value: random
+  split_seed:
+    value: 101
+  use_reverse_complements:
+    distribution: categorical
+    values: [false, true]
+  barcode_weighting:
+    value: false
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: ResNet1DRegressor
+  input_len:
+    value: 80
+  n_outputs:
+    value: 1
+  output_names:
+    value: [log2_RNA_DNA]
+  log_per_output_metric_details:
+    value: false
+  log_legacy_metric_aliases:
+    value: false
+  stem_channels:
+    distribution: int_uniform
+    min: 32
+    max: 128
+  stem_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7, 9]
+  block_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7, 9]
+  dropout_p:
+    distribution: uniform
+    min: 0.05
+    max: 0.4
+  head_hidden_channels:
+    distribution: int_uniform
+    min: 32
+    max: 192
+  use_batch_norm:
+    distribution: categorical
+    values: [true, false]
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.00003
+    max: 0.003
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.003
+  amsgrad:
+    distribution: categorical
+    values: [true, false]
+  beta1:
+    distribution: uniform
+    min: 0.84
+    max: 0.95
+  beta2:
+    distribution: uniform
+    min: 0.985
+    max: 0.999
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  T_0:
+    distribution: categorical
+    values: [500, 1000, 2000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+  scheduler_interval:
+    value: step
+
+  batch_size:
+    distribution: categorical
+    values: [64, 128, 256]
+  num_workers:
+    value: 8
+  max_epochs:
+    value: 180
+  min_epochs:
+    value: 20
+  stopping_patience:
+    value: 35
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: val_pearson
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 32
+  logger_type:
+    value: wandb
+  logger_project:
+    value: introns__bashor_in_house__lib1_intron_modal80__scratch__resnet1d
+  run_name:
+    value: lib1_intron_modal80_resnet1d_scratch_{runid}
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/introns/bashor_in_house/lib1_intron_modal80/resnet1d/scratch_bayes
+  best_checkpoint_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/hpo_runs/by_project/introns__bashor_in_house__lib1_intron_modal80__scratch__resnet1d/best_checkpoint_model
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/introns/bashor_in_house/lib1_intron_modal80/resnet1d/scratch_bayes

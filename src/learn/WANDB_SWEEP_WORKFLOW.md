@@ -59,8 +59,9 @@ All curated launchers accept:
 - `PILOT=1` — shrinks whatever the launcher was going to do down to a
   1-agent / 1-run smoke test with `LAUNCH_NOTES` defaulting to `pilot`.
   Useful to verify a config end-to-end (train → test → runs.csv) before
-  scheduling a real sweep. Use `launch/run_all_regions_pilot.sh` to run
-  a pilot per CRE region sequentially.
+  scheduling a real sweep. Use
+  `PILOT=1 GPU_LIST="0" PARTS="enhancer" MODE=sequential bash launch/lib1_inhouse_scratch_orchestrator.sh`
+  for the standardized Lib1 in-house pilot path.
 
 The last two override the YAML defaults when you intentionally want to place a sweep in a different W&B location.
 
@@ -70,7 +71,7 @@ If a sweep already exists, pass the full sweep path:
 
 ```bash
 SWEEP_ID="minhangxu1998-baylor-college-of-medicine/boda2_EU-src_learn/qbj4v71s" \
-bash launch/enhancer_malinois_basset_nonbranched_single_head_combined_sweep.sh
+bash launch/lib1_enhancer_no_flank_hq8_scratch_resnet1d_sweep.sh
 ```
 
 For an agent-only attach flow, use `deploy_wandb_agent_train.sh` with a full `SWEEP_ID`.

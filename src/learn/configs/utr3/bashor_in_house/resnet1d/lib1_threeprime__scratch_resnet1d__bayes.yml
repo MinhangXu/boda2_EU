@@ -1,0 +1,155 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: utr3__bashor_in_house__threeprime_modal100__scratch__resnet1d_fp32
+method: bayes
+metric:
+  name: val_pearson
+  goal: maximize
+parameters:
+  epoch_eval_splits:
+    value: [train, val, test]
+  data_module:
+    value: Lib1ThreePrimeDataModule
+  datafile_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/utr3/bashor_in_house/lib1_threeprime_modal100_fastqs1_5__learn_ready.tsv
+  sep:
+    value: tab
+  sequence_column:
+    value: ThreePrime
+  target_column:
+    value: log2_RNA_DNA
+  barcode_column:
+    value: n_barcodes
+  padded_seq_len:
+    value: 100
+  padding_mode:
+    value: none
+  normalize:
+    value: true
+  test_min_barcodes:
+    value: 8
+  train_min_barcodes:
+    value: 1
+  val_frac_within_hq:
+    value: 0.25
+  test_frac_within_hq:
+    value: 0.25
+  train_size_frac:
+    value: 1.0
+  train_sampling_mode:
+    value: random
+  split_seed:
+    values: [101, 202, 303, 404]
+  use_reverse_complements:
+    value: false
+  barcode_weighting:
+    value: false
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: ResNet1DRegressor
+  input_len:
+    value: 100
+  n_outputs:
+    value: 1
+  output_names:
+    value: [log2_RNA_DNA]
+  log_per_output_metric_details:
+    value: false
+  log_legacy_metric_aliases:
+    value: false
+  stem_channels:
+    distribution: int_uniform
+    min: 32
+    max: 128
+  stem_kernel_size:
+    distribution: categorical
+    values: [5, 7, 11, 15]
+  block_kernel_size:
+    distribution: categorical
+    values: [3, 5, 7, 9]
+  dropout_p:
+    distribution: uniform
+    min: 0.05
+    max: 0.4
+  head_hidden_channels:
+    distribution: int_uniform
+    min: 64
+    max: 256
+  use_batch_norm:
+    distribution: categorical
+    values: [true, false]
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.00003
+    max: 0.003
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.003
+  amsgrad:
+    distribution: categorical
+    values: [true, false]
+  beta1:
+    distribution: uniform
+    min: 0.84
+    max: 0.95
+  beta2:
+    distribution: uniform
+    min: 0.985
+    max: 0.999
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  T_0:
+    distribution: categorical
+    values: [500, 1000, 2000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+  scheduler_interval:
+    value: step
+
+  batch_size:
+    distribution: categorical
+    values: [64, 128, 256]
+  num_workers:
+    value: 8
+  max_epochs:
+    value: 160
+  min_epochs:
+    value: 20
+  stopping_patience:
+    value: 30
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: val_pearson
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 32
+  logger_type:
+    value: wandb
+  logger_project:
+    value: utr3__bashor_in_house__threeprime_modal100__scratch__resnet1d_fp32
+  run_name:
+    value: threeprime_modal100_resnet1d_fp32_{runid}
+  artifact_path:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr3/bashor_in_house/threeprime_modal100/resnet1d/scratch_fp32_bayes
+  best_checkpoint_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/hpo_runs/by_project/utr3__bashor_in_house__threeprime_modal100__scratch__resnet1d_fp32/best_checkpoint_model
+  default_root_dir:
+    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr3/bashor_in_house/threeprime_modal100/resnet1d/scratch_fp32_bayes
