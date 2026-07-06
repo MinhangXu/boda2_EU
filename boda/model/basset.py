@@ -549,6 +549,72 @@ class UTR_BassetVL(ptl.LightningModule):
         encoded = self.encode(x)
         decoded = self.decode(encoded)
         return self.classify(decoded)
+
+
+class PromoterBassetVL(UTR_BassetVL):
+    """
+    Short-sequence BassetVL defaults for Lib1 promoter regression.
+
+    This uses the same-padded three-convolution stack from UTR_BassetVL, but
+    defaults to a 51 nt input and adaptive pooling. Original Basset pooling
+    compresses a 51 nt input to a single spatial bin; adaptive pooling keeps a
+    small spatial grid while still regularizing the dense head.
+    """
+
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = UTR_BassetVL.add_model_specific_args(parent_parser)
+        parser.set_defaults(
+            input_len=51,
+            conv1_channels=96,
+            conv1_kernel_size=7,
+            conv2_channels=96,
+            conv2_kernel_size=7,
+            conv3_channels=64,
+            conv3_kernel_size=5,
+            adaptive_pool_output_size=8,
+            n_linear_layers=1,
+            linear_channels=96,
+            linear_activation='ReLU',
+            linear_dropout_p=0.3,
+            n_outputs=1,
+            loss_criterion='MSELoss',
+        )
+        return parser
+
+    def __init__(self,
+                 input_len=51,
+                 conv1_channels=96, conv1_kernel_size=7,
+                 conv2_channels=96, conv2_kernel_size=7,
+                 conv3_channels=64, conv3_kernel_size=5,
+                 adaptive_pool_output_size=8,
+                 n_linear_layers=1, linear_channels=96,
+                 linear_activation='ReLU',
+                 linear_dropout_p=0.3,
+                 n_outputs=1,
+                 use_batch_norm=True,
+                 use_weight_norm=False,
+                 loss_criterion='MSELoss',
+                 loss_args=None):
+        super().__init__(
+            input_len=input_len,
+            conv1_channels=conv1_channels,
+            conv1_kernel_size=conv1_kernel_size,
+            conv2_channels=conv2_channels,
+            conv2_kernel_size=conv2_kernel_size,
+            conv3_channels=conv3_channels,
+            conv3_kernel_size=conv3_kernel_size,
+            adaptive_pool_output_size=adaptive_pool_output_size,
+            n_linear_layers=n_linear_layers,
+            linear_channels=linear_channels,
+            linear_activation=linear_activation,
+            linear_dropout_p=linear_dropout_p,
+            n_outputs=n_outputs,
+            use_batch_norm=use_batch_norm,
+            use_weight_norm=use_weight_norm,
+            loss_criterion=loss_criterion,
+            loss_args={} if loss_args is None else loss_args,
+        )
     
 class BassetVL(ptl.LightningModule):
     """

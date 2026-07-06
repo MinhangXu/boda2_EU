@@ -101,6 +101,7 @@ DEFAULT_INHOUSE_PATH = (
     WORK_ROOT
     / "opt_EU_learn_n_design"
     / "MattLee_lib1"
+    / "single_part_variant_level"
     / "FivePrimes"
     / "L1_final_fastqs1-5_sublibrary_FivePrime_subset.csv"
 )

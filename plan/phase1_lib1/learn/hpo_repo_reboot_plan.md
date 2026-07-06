@@ -383,7 +383,7 @@ Then compare:
 
 Dataset:
 
-- `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt`
+- `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt`
 
 Observed columns:
 
@@ -415,7 +415,7 @@ New comparison path:
 
 - config: `src/learn/configs/enhancer/bashor_in_house/lib1_enhancer_fastqs1_5__scratch_no_flank_basic__bayes.yml`
 - launcher: `src/learn/launch/lib1_enhancer_fastqs1_5_scratch_no_flank_sweep.sh`
-- source CSV: `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv`
+- source CSV: `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv`
 - learn-ready table: `src/learn/derived_data/enhancer/bashor_in_house/lib1_fastqs1_5_0filtered_out__learn_ready.tsv`
 
 Rationale:

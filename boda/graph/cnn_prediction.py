@@ -83,6 +83,8 @@ class CNNBasicTraining(LightningModule):
         group.add_argument('--scheduler_monitor', type=str)
         group.add_argument('--scheduler_interval', type=str, default='epoch')
         group.add_argument('--output_names', type=str, nargs='+', default=None)
+        group.add_argument('--log_per_output_metric_details', type=utils.str2bool, default=True)
+        group.add_argument('--log_legacy_metric_aliases', type=utils.str2bool, default=True)
         return parser
     
     @staticmethod
@@ -131,7 +133,9 @@ class CNNBasicTraining(LightningModule):
     def __init__(self, model, optimizer='Adam', scheduler=None, 
                  scheduler_monitor=None, scheduler_interval='epoch', 
                  optimizer_args=None, scheduler_args=None,
-                 output_names=None):
+                 output_names=None,
+                 log_per_output_metric_details=True,
+                 log_legacy_metric_aliases=True):
         """
         Initialize the CNNBasicTraining module.
 
@@ -154,6 +158,9 @@ class CNNBasicTraining(LightningModule):
         self.optimizer_args = optimizer_args
         self.scheduler_args = scheduler_args
         self.output_names = _coerce_optional_list(output_names)
+        self.log_per_output_metric_details = log_per_output_metric_details
+        self.log_legacy_metric_aliases = log_legacy_metric_aliases
+        self.validation_loader_names = None
         
     def forward(self, input):
         """
@@ -190,6 +197,19 @@ class CNNBasicTraining(LightningModule):
             return ['SingleOutput']
         return [f'output_{i}' for i in range(n_outputs)]
 
+    def unpack_xy(self, batch):
+        if isinstance(batch, (list, tuple)) and len(batch) >= 2:
+            return batch[0], batch[1]
+        x, y = batch
+        return x, y
+
+    def align_prediction_and_label_shapes(self, y_hat, y):
+        if y_hat.dim() == 1:
+            y_hat = y_hat.view(-1, 1)
+        if y.dim() == 1:
+            y = y.view(-1, 1)
+        return y_hat, y
+
     @staticmethod
     def _metric_vector(values):
         if not torch.is_tensor(values):
@@ -199,6 +219,9 @@ class CNNBasicTraining(LightningModule):
         return values
 
     def log_per_output_metrics(self, prefix, pearson_vals=None, spearman_vals=None, mse_vals=None, **log_kwargs):
+        if not self.log_per_output_metric_details:
+            return
+
         metric_source = pearson_vals
         if metric_source is None:
             metric_source = spearman_vals
@@ -216,13 +239,134 @@ class CNNBasicTraining(LightningModule):
                 pearson_vec = self._metric_vector(pearson_vals)
                 coeff = pearson_vec[idx]
                 self.log(f'{prefix}_pearson_{name}', coeff, **log_kwargs)
-                self.log(f'{prefix}_pearson_squared_{name}', coeff ** 2, **log_kwargs)
+                if self.log_legacy_metric_aliases:
+                    self.log(f'{prefix}_pearson_squared_{name}', coeff ** 2, **log_kwargs)
             if spearman_vals is not None:
                 spearman_vec = self._metric_vector(spearman_vals)
                 self.log(f'{prefix}_spearman_{name}', spearman_vec[idx], **log_kwargs)
             if mse_vals is not None:
                 mse_vec = self._metric_vector(mse_vals)
                 self.log(f'{prefix}_mse_{name}', mse_vec[idx], **log_kwargs)
+
+    def _canonical_epoch_metrics(self, prefix, step_outputs):
+        if not step_outputs:
+            return None
+
+        losses = []
+        preds = []
+        labels = []
+        for batch in step_outputs:
+            if batch is None:
+                continue
+            losses.append(batch['loss'].detach())
+            preds.append(batch['preds'].detach())
+            labels.append(batch['labels'].detach())
+        if not preds:
+            return None
+
+        loss = torch.stack(losses, dim=0).mean()
+        epoch_preds = torch.cat(preds, dim=0)
+        epoch_labels = torch.cat(labels, dim=0)
+        epoch_preds, epoch_labels = self.align_prediction_and_label_shapes(epoch_preds, epoch_labels)
+
+        mse_vals = (epoch_preds - epoch_labels).pow(2).mean(dim=0)
+        mse = mse_vals.mean()
+        pearson_vals, mean_pearson = pearson_correlation(epoch_preds, epoch_labels)
+        spearman_vals, mean_spearman = spearman_correlation(epoch_preds, epoch_labels)
+        cod_r2 = coefficient_of_determination(epoch_labels, epoch_preds)
+        pearson_r2 = mean_pearson * mean_pearson
+
+        log_kwargs = {'on_step': False, 'on_epoch': True, 'logger': True}
+        self.log(f'{prefix}_loss', loss, **log_kwargs)
+        self.log(f'{prefix}_mse', mse, **log_kwargs)
+        self.log(f'{prefix}_pearson', mean_pearson, **log_kwargs)
+        self.log(f'{prefix}_pearson_r2', pearson_r2, **log_kwargs)
+        self.log(f'{prefix}_spearman', mean_spearman, **log_kwargs)
+        self.log(f'{prefix}_cod_r2', cod_r2, **log_kwargs)
+        self.log_per_output_metrics(
+            prefix,
+            pearson_vals=pearson_vals,
+            spearman_vals=spearman_vals,
+            mse_vals=mse_vals,
+            **log_kwargs,
+        )
+
+        return {
+            'loss': loss,
+            'mse': mse,
+            'pearson_vals': pearson_vals,
+            'pearson': mean_pearson,
+            'pearson_r2': pearson_r2,
+            'spearman_vals': spearman_vals,
+            'spearman': mean_spearman,
+            'cod_r2': cod_r2,
+        }
+
+    @staticmethod
+    def _history_scalar(value):
+        if value is None:
+            return None
+        try:
+            if torch.is_tensor(value):
+                if value.numel() != 1:
+                    return None
+                return float(value.detach().cpu().item())
+            return float(value)
+        except Exception:
+            return None
+
+    def _canonical_history_payload(self, prefix, metrics):
+        if not metrics:
+            return {}
+        payload = {}
+        for metric_name in ['loss', 'mse', 'pearson', 'pearson_r2', 'spearman', 'cod_r2']:
+            value = self._history_scalar(metrics.get(metric_name))
+            if value is not None and math.isfinite(value):
+                payload[f'{prefix}_{metric_name}'] = value
+        return payload
+
+    @staticmethod
+    def _wandb_history_required():
+        return os.environ.get("BODA_REQUIRE_WANDB_HISTORY") == "1"
+
+    def _log_canonical_history(self, payload):
+        if not payload:
+            return
+        try:
+            if getattr(self.trainer, 'sanity_checking', False):
+                return
+        except Exception:
+            pass
+        try:
+            import wandb
+            if wandb.run is None:
+                if self._wandb_history_required():
+                    raise RuntimeError(
+                        "wandb.run is not initialized while canonical W&B history logging is required."
+                    )
+                return
+            history = {
+                'trainer/global_step': int(self.global_step),
+                'epoch': int(self.current_epoch),
+            }
+            history.update(payload)
+            wandb.log(history, commit=True)
+        except Exception as exc:
+            if self._wandb_history_required():
+                raise RuntimeError(
+                    "Failed to write canonical metric history to W&B. "
+                    "This run would not satisfy the standardized Lib1 HPO logging contract."
+                ) from exc
+            print(f"WARN: canonical W&B history logging failed: {exc}", file=sys.stderr)
+            return
+
+    def _validation_prefixes(self, outputs):
+        if self.validation_loader_names is not None:
+            return list(self.validation_loader_names)
+        if outputs and isinstance(outputs[0], list):
+            defaults = ['val', 'test']
+            return defaults[:len(outputs)] + [f'val_loader_{idx}' for idx in range(len(defaults), len(outputs))]
+        return ['val']
         
     def aug_log(self, internal_metrics=None, external_metrics=None):
         """
@@ -296,18 +440,33 @@ class CNNBasicTraining(LightningModule):
         Returns:
             torch.Tensor: Loss for the training step.
         """
-        x, y   = batch
+        x, y = self.unpack_xy(batch)
         y_hat  = self(x)
         
-        # Add this condition to handle shape mismatch
-        if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
-            y_hat = y_hat.squeeze(1)
+        y_hat, y = self.align_prediction_and_label_shapes(y_hat, y)
             
         loss = self.criterion(y_hat, y)
-        self.log('train_loss', loss)
-        return loss
+        if self.log_legacy_metric_aliases:
+            self.log('train_loss', loss)
+        return {'loss': loss, 'preds': y_hat.detach(), 'labels': y.detach()}
+
+    def training_epoch_end(self, train_step_outputs):
+        """
+        Optional epoch-level train metrics from the training pass.
+
+        Canonical runs normally get cleaner train diagnostics from an explicit
+        train eval loader configured by `train_wandb_log.py`. This fallback is
+        only for canonical runs that do not request that extra eval pass.
+        """
+        if self.log_legacy_metric_aliases:
+            return None
+        if self.validation_loader_names is not None and 'train' in self.validation_loader_names:
+            return None
+        metrics = self._canonical_epoch_metrics('train', train_step_outputs)
+        self._log_canonical_history(self._canonical_history_payload('train', metrics))
+        return None
         
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         """
         Validation step implementation.
 
@@ -318,30 +477,28 @@ class CNNBasicTraining(LightningModule):
         Returns:
             dict: Dictionary containing loss, metric, predictions, and labels for the validation step.
         """
-        x, y   = batch
+        x, y = self.unpack_xy(batch)
         y_hat = self(x)
 
-        # If y_hat is 2D and y is 1D, squeeze y_hat
-        if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
-            y_hat = y_hat.squeeze(1)
+        y_hat, y = self.align_prediction_and_label_shapes(y_hat, y)
 
-        # Loss
         loss   = self.criterion(y_hat, y)
-        self.log('step_valid_loss', loss)
-        # Compatibility alias for older sweeps that monitor `valid_loss`
-        self.log('valid_loss', loss)
-
-        # Historical repo "R2" is Pearson's r squared; log it explicitly.
-        step_valid_pearson_r2 = pearson_r2_score(y, y_hat)
-        self.log('step_valid_pearson_r2', step_valid_pearson_r2)
-
-        # Pearson correlation
-        pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y) 
-        self.log('valid_mean_pearson', mean_pearsonr)
-
         metric = self.categorical_mse(y_hat, y)
-        self.log_per_output_metrics('valid', pearson_vals=pearsonr_vals, mse_vals=metric)
-        return {'loss': loss, 'metric': metric, 'preds': y_hat, 'labels': y}
+        if self.log_legacy_metric_aliases:
+            self.log('step_valid_loss', loss)
+            # Compatibility alias for older sweeps that monitor `valid_loss`
+            self.log('valid_loss', loss)
+
+            # Historical repo "R2" is Pearson's r squared; log it explicitly.
+            step_valid_pearson_r2 = pearson_r2_score(y, y_hat)
+            self.log('step_valid_pearson_r2', step_valid_pearson_r2)
+
+            # Pearson correlation
+            pearsonr_vals, mean_pearsonr = pearson_correlation(y_hat, y)
+            self.log('valid_mean_pearson', mean_pearsonr)
+
+            self.log_per_output_metrics('valid', pearson_vals=pearsonr_vals, mse_vals=metric)
+        return {'loss': loss.detach(), 'metric': metric.detach(), 'preds': y_hat.detach(), 'labels': y.detach()}
 
     def validation_epoch_end(self, val_step_outputs):
         """
@@ -350,12 +507,28 @@ class CNNBasicTraining(LightningModule):
         Args:
             val_step_outputs (list): List of dictionaries containing validation step outputs.
         """
+        if val_step_outputs and isinstance(val_step_outputs[0], list):
+            prefixes = self._validation_prefixes(val_step_outputs)
+            history_payload = {}
+            for prefix, outputs in zip(prefixes, val_step_outputs):
+                metrics = self._canonical_epoch_metrics(prefix, outputs)
+                history_payload.update(self._canonical_history_payload(prefix, metrics))
+            self._log_canonical_history(history_payload)
+            return None
+
+        canonical = self._canonical_epoch_metrics('val', val_step_outputs)
+        if not self.log_legacy_metric_aliases:
+            self._log_canonical_history(self._canonical_history_payload('val', canonical))
+            self.log('current_epoch', self.current_epoch, on_epoch=True)
+            return None
+
         arit_mean = torch.stack([ batch['loss'] for batch in val_step_outputs ], dim=0) \
                       .mean()
         harm_mean = torch.stack([ batch['metric'] for batch in val_step_outputs ], dim=0) \
                       .mean(dim=0).pow(-1).mean().pow(-1)
         epoch_preds = torch.cat([batch['preds'] for batch in val_step_outputs], dim=0)
         epoch_labels  = torch.cat([batch['labels'] for batch in val_step_outputs], dim=0)
+        epoch_preds, epoch_labels = self.align_prediction_and_label_shapes(epoch_preds, epoch_labels)
         val_mse = (epoch_preds - epoch_labels).pow(2).mean()
         val_mse_vals = (epoch_preds - epoch_labels).pow(2).mean(dim=0)
 
@@ -420,12 +593,12 @@ class CNNBasicTraining(LightningModule):
         Returns:
             dict: {'loss', 'preds', 'labels'} for aggregation.
         """
-        x, y = batch
+        x, y = self.unpack_xy(batch)
         y_hat = self(x)
-        if y_hat.dim() == 2 and y_hat.shape[1] == 1 and y.dim() == 1:
-            y_hat = y_hat.squeeze(1)
+        y_hat, y = self.align_prediction_and_label_shapes(y_hat, y)
         loss = self.criterion(y_hat, y)
-        self.log('step_test_loss', loss, on_epoch=True)
+        if self.log_legacy_metric_aliases:
+            self.log('step_test_loss', loss, on_epoch=True)
         return {'loss': loss.detach(), 'preds': y_hat.detach(), 'labels': y.detach()}
 
     def test_epoch_end(self, test_step_outputs):
@@ -442,9 +615,15 @@ class CNNBasicTraining(LightningModule):
         if not test_step_outputs:
             return None
 
+        canonical = self._canonical_epoch_metrics('test', test_step_outputs)
+        self._log_canonical_history(self._canonical_history_payload('test', canonical))
+        if not self.log_legacy_metric_aliases:
+            return None
+
         loss = torch.stack([b['loss'] for b in test_step_outputs], dim=0).mean()
         epoch_preds = torch.cat([b['preds'] for b in test_step_outputs], dim=0)
         epoch_labels = torch.cat([b['labels'] for b in test_step_outputs], dim=0)
+        epoch_preds, epoch_labels = self.align_prediction_and_label_shapes(epoch_preds, epoch_labels)
         test_mse = (epoch_preds - epoch_labels).pow(2).mean()
         test_mse_vals = (epoch_preds - epoch_labels).pow(2).mean(dim=0)
 

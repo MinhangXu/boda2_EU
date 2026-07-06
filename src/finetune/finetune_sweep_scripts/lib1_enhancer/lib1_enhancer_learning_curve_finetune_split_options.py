@@ -41,7 +41,7 @@ import pandas as pd
 THIS_DIR = Path(__file__).resolve().parent
 BASE_SCRIPT_PATH = THIS_DIR / "lib1_enhancer_learning_curve_finetune_updated.py"
 DEFAULT_DATA_PATH = Path(
-    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/"
+    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/"
     "20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt"
 )
 DEFAULT_MODEL_PATH = (

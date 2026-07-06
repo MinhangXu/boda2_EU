@@ -11,7 +11,7 @@ import pandas as pd
 
 
 DEFAULT_INPUT = Path(
-    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/"
+    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/"
     "L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv"
 )
 DEFAULT_OUTPUT = Path(
@@ -62,6 +62,10 @@ def main() -> None:
     )
     out = out.loc[valid].reset_index(drop=True)
 
+    out["RNA_DNA"] = out["RNA_DNA_Ratio_raw"]
+    out["log2_RNA_DNA"] = np.log2(out["RNA_DNA"])
+    out["log10_RNA_DNA"] = np.log10(out["RNA_DNA"])
+
     # The earlier Lib1 table used an approximately log10(raw_ratio) + 2 scale.
     # Recreating that target keeps this larger table closer to the old training setup.
     out["RNA_DNA_Ratio_log10_scaled"] = np.log10(out["RNA_DNA_Ratio_raw"]) + 2.0
@@ -77,7 +81,8 @@ def main() -> None:
     print(f"Wrote learn-ready Lib1 enhancer dataset to: {args.output_path}")
     print(f"Rows: {len(out)}")
     print(f"HQ rows with n_barcodes >= 4: {int((out['n_barcodes'] >= 4).sum())}")
-    print("Target column: RNA_DNA_Ratio_log10_scaled")
+    print("Default target column: RNA_DNA_Ratio_log10_scaled")
+    print("Alternative target column: log2_RNA_DNA")
 
 
 if __name__ == "__main__":

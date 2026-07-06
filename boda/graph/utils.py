@@ -278,9 +278,13 @@ def pearson_correlation(x, y):
         torch.Tensor: Pearson correlation coefficients.
         torch.Tensor: Mean of Pearson correlation coefficients.
     """
+    x = x.float()
+    y = y.float()
     vx = x - torch.mean(x, dim=0)
     vy = y - torch.mean(y, dim=0)
-    pearsons = torch.sum(vx * vy, dim=0) / (torch.sqrt(torch.sum(vx ** 2, dim=0)) * torch.sqrt(torch.sum(vy ** 2, dim=0)) + 1e-10)
+    numerator = torch.sum(vx * vy, dim=0)
+    denominator = torch.sqrt(torch.sum(vx ** 2, dim=0)) * torch.sqrt(torch.sum(vy ** 2, dim=0))
+    pearsons = numerator / denominator.clamp_min(1e-8)
     return pearsons, torch.mean(pearsons)
     
 def shannon_entropy(x):
@@ -305,8 +309,8 @@ def pearson_r2_score(y_true, y_pred):
     Historical "R2" used across this repo: square of Pearson's correlation
     after flattening all outputs.
     """
-    y_true = y_true.cpu().detach().numpy().flatten()
-    y_pred = y_pred.cpu().detach().numpy().flatten()
+    y_true = y_true.float().cpu().detach().numpy().flatten()
+    y_pred = y_pred.float().cpu().detach().numpy().flatten()
     if y_true.size < 2 or y_pred.size < 2:
         return 0.0
     corr_matrix = np.corrcoef(y_true, y_pred)
@@ -321,8 +325,8 @@ def coefficient_of_determination(y_true, y_pred):
     Standard regression R^2 (coefficient of determination) after flattening
     all outputs.
     """
-    y_true = y_true.cpu().detach().numpy().flatten()
-    y_pred = y_pred.cpu().detach().numpy().flatten()
+    y_true = y_true.float().cpu().detach().numpy().flatten()
+    y_pred = y_pred.float().cpu().detach().numpy().flatten()
     if y_true.size == 0:
         return 0.0
     residual = y_true - y_pred

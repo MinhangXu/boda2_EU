@@ -69,10 +69,10 @@ for the fuller Phase 1 thread taxonomy, run/notebook ledger, and gap register.
 | Part class | Pretraining | Fine-tune | From scratch | Current decision surface | Next action |
 |---|---|---|---|---|---|
 | Enhancer | BODA2/Malinois checkpoint available | Lib1 transfer and barcode-count studies mostly complete | Current in-house scratch evidence is weak | `phase1_lib1/finetune/lib1_enhancer_scratch_and_finetune_rehydration_june2026.md` | Decide which enhancer notebooks to keep canonical; run only the missing scratch comparison if it changes decisions. |
-| Promoter | Legacy in-house e7/e30 pretraining exists but needs split-safe rerun | Pending | Lib1 scratch pending | `phase1_lib1/promoter_phase1.md` | Rebuild e7/e30 train/val/test split, test RC augmentation, then compare Lib1 scratch versus legacy-to-Lib1 fine-tune. |
-| 5 Prime UTR | Hani Lib1/Lib2 pretraining complete | Phase 2 v2 and June in-house HPO complete | Phase 3 Lib1+Lib2 scratch complete | Phase 2 v2, Phase 3 scratch, and June in-house notebooks | Pick the seed checkpoint for combinatorial scenario 2. |
-| Intron | Seelig pretraining complete | Pipeline in progress | Public scratch complete | Seelig pretraining notebook plus promoter/intron one-shot notebook | Resolve in-house one-shot mismatch before fine-tune claims. |
-| 3 Prime UTR | Hani pretraining complete | Pending | Public scratch/HPO roots exist | Public CRE/PARADE summary notebooks | Run from-scratch versus fine-tune comparison. |
+| Promoter | Legacy in-house e7/e30 pretraining exists but needs split-safe rerun | Pending | June Lib1 scratch HPO complete for ResNet1D and BassetVL | `phase1_lib1/phase1_library1_thread_matrix_june2026.md`, `phase1_lib1/promoter_phase1.md` | Analyze scratch HPO, decide modal50 versus allvalid/51-padded policy, then compare against legacy-to-Lib1 fine-tune. |
+| 5 Prime UTR | Hani Lib1/Lib2 pretraining complete | Phase 2 v2 and June in-house HPO complete | Phase 3 Lib1+Lib2 scratch complete; in-house exact/modal50 ResNet1D/BassetVL scratch scaffolds added | Phase 2 v2, Phase 3 scratch, June in-house notebooks, and `src/learn/launch/lib1_fiveprime_scratch_resnet1d_sweep.sh` / `src/learn/launch/lib1_fiveprime_scratch_utr_bassetvl_sweep.sh` | Run in-house scratch baselines, then pick the seed checkpoint for combinatorial scenario 2. |
+| Intron | Seelig pretraining complete | Pipeline in progress | June Lib1 modal80 ResNet scratch HPO complete | Seelig pretraining notebook plus in-house scratch HPO notebook | Confirm architecture/RC and decide whether Seelig fine-tune is still needed. |
+| 3 Prime UTR | Hani pretraining complete | Pending | June Lib1 modal100 ResNet/Basset scratch HPO complete | In-house scratch HPO notebook plus public CRE/PARADE summaries | Synthesize BassetVL focused RC factorial and compare against any length-context/fine-tune branch. |
 
 ## Adding A New Plan
 

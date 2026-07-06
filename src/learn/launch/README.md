@@ -117,6 +117,21 @@ cloud history. Standardized `logger_type: wandb` HPO runs define canonical
 canonical metrics through both Lightning and explicit `wandb.log`, and fail
 loudly instead of falling back to a non-W&B logger when W&B init fails.
 
+Lib1 outer-seed prior-informed no-RC manifest pilot:
+
+```bash
+cd /home/minhang/synBio_AL/boda2_EU
+python src/learn/generate_lib1_outer_seed_prior_hpo_manifest.py
+
+DRY_RUN=1 GPU_LIST="0" PARTS="promoter" MAX_CONFIGS_PER_PART=2 \
+  SPLIT_SEEDS="101 202" \
+  bash src/learn/launch/lib1_inhouse_outer_seed_prior_orchestrator.sh
+```
+
+This pilot selects one part, the first two base `config_id` values for that
+part, and two split seeds: 1 x 2 x 2 = 4 dry-run commands. Remove `DRY_RUN=1`
+only after checking the printed commands, W&B project names, and output paths.
+
 If `SWEEP_ID` is already known, set it before launching agents. Use:
 
 - the full sweep path: `entity/project/sweep_id`
@@ -131,6 +146,8 @@ Sweep identity note:
 ## Current Scripts
 
 - `enhancer_malinois_basset_branched_baseline.sh`
+- `lib1_enhancer_no_flank_hq8_log2target_scratch_bassetvl_sweep.sh`
+- `lib1_enhancer_no_flank_hq8_log2target_scratch_resnet1d_sweep.sh`
 - `lib1_enhancer_no_flank_hq8_scratch_bassetvl_sweep.sh`
 - `lib1_enhancer_no_flank_hq8_scratch_resnet1d_sweep.sh`
 - `lib1_fiveprime_scratch_resnet1d_sweep.sh`
@@ -140,6 +157,9 @@ Sweep identity note:
   sweep at a time; `MODE=parallel_by_part` splits GPUs across architecture
   sweeps within each part and waits before moving to the next part. It includes
   the standardized enhancer no-flank HQ8 ResNet1D/BassetVL launchers.
+- `lib1_inhouse_outer_seed_prior_orchestrator.sh` — runs fixed manifest rows
+  from the June 2026 Lib1 no-RC outer-split-seed prior-informed HPO design via
+  a global one-worker-per-GPU queue.
 - `lib1_intron_scratch_resnet1d_sweep.sh`
 - `lib1_promoter_scratch_promoter_bassetvl_sweep.sh`
 - `lib1_promoter_scratch_resnet1d_sweep.sh`

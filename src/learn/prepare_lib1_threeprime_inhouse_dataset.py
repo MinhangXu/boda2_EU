@@ -24,6 +24,7 @@ DEFAULT_INPUT = (
     WORK_ROOT
     / "opt_EU_learn_n_design"
     / "MattLee_lib1"
+    / "single_part_variant_level"
     / "ThreePrimes"
     / "L1_final_fastqs1-5_sublibrary_ThreePrime_subset.csv"
 )

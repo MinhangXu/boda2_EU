@@ -22,7 +22,7 @@ VAL_SIZE_WITHIN_HQ="${VAL_SIZE_WITHIN_HQ:-250}"
 TEST_SIZE_WITHIN_HQ="${TEST_SIZE_WITHIN_HQ:-250}"
 DRY_RUN="${DRY_RUN:-0}"
 
-SOURCE_DATA="/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/introns/L1_final_fastqs1-5_sublibrary_Intron_subset.csv"
+SOURCE_DATA="/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/introns/L1_final_fastqs1-5_sublibrary_Intron_subset.csv"
 LEARN_READY_DATA="${LEARN_DIR}/derived_data/introns/bashor_in_house/lib1_intron_modal80_fastqs1_5__learn_ready.tsv"
 
 if [[ "${LENGTH_POLICY}" != "modal" ]]; then

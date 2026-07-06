@@ -973,7 +973,13 @@ class UTR_Polysome_MPRA_DataModule(MPRA_DataModule):
 
 # Define a dataset that converts sequences to one-hot encoded tensors.
 class PromoterDataset(Dataset):
-    def __init__(self, df, sequence_column='padded_seq', target_column='expression'):
+    def __init__(
+        self,
+        df,
+        sequence_column='padded_seq',
+        target_column='expression',
+        use_reverse_complements=False,
+    ):
         """
         df: DataFrame with at least [sequence_column] and [target_column]
         sequence_column: Column containing the (padded) sequence
@@ -982,14 +988,20 @@ class PromoterDataset(Dataset):
         self.df = df
         self.sequence_column = sequence_column
         self.target_column = target_column
+        self.use_reverse_complements = use_reverse_complements
+        self.n_examples = len(self.df)
 
     def __len__(self):
-        return len(self.df)
+        return self.n_examples * 2 if self.use_reverse_complements else self.n_examples
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
+        take_rc = self.use_reverse_complements and (idx % 2 == 1)
+        item_idx = (idx // 2) if self.use_reverse_complements else idx
+        row = self.df.iloc[item_idx]
         # Get the one-hot encoded tensor
         seq_tensor = utils.row_dna2tensor(row, in_column_name=self.sequence_column)
+        if take_rc:
+            seq_tensor = utils.reverse_complement_onehot(seq_tensor)
         # Get the standardized expression value and reshape to [1]
         expression = torch.tensor(row[self.target_column], dtype=torch.float32).view(-1)
         return seq_tensor, expression
@@ -999,10 +1011,15 @@ class PromoterDataModule(pl.LightningDataModule):
                  datafile_path,
                  batch_size=32,
                  sequence_column='sequence',
+                 target_column='expression',
+                 split_column='set',
                  num_workers=0,
                  seed=42,
                  padded_seq_len=80,
-                 use_reverse_complements=False):
+                 use_reverse_complements=False,
+                 train_only_reverse_complements=False,
+                 standardize_target=True,
+                 standardize_on_train_only=False):
         """
         Stores the file path and hyperparameters.
         The CSV is read in setup().
@@ -1016,13 +1033,21 @@ class PromoterDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.sequence_column = sequence_column
+        self.target_column = target_column
+        self.split_column = split_column
         self.seed = seed
         self.padded_seq_len = padded_seq_len
         self.use_reverse_complements = use_reverse_complements
+        self.train_only_reverse_complements = train_only_reverse_complements
+        self.standardize_target = standardize_target
+        self.standardize_on_train_only = standardize_on_train_only
 
         self.dataset_train = None
         self.dataset_val = None
         self.dataset_test = None
+        self.df_train = None
+        self.df_val = None
+        self.df_test = None
 
         # Create a padding function similar to UTR modules.
         self.padding_fn = partial(utils.UTR_row_pad_sequence,
@@ -1047,6 +1072,18 @@ class PromoterDataModule(pl.LightningDataModule):
                            help="Desired sequence length after padding (e.g. 80).")
         group.add_argument('--use_reverse_complements', type=utils.str2bool, default=False,
                        help="Whether to use reverse complements for data augmentation")
+        group.add_argument('--sequence_column', type=str, default='sequence',
+                           help="Column containing promoter sequences.")
+        group.add_argument('--target_column', type=str, default='expression',
+                           help="Column containing the promoter regression target.")
+        group.add_argument('--split_column', type=str, default='set',
+                           help="Column containing train/val/test split labels.")
+        group.add_argument('--train_only_reverse_complements', type=utils.str2bool, default=False,
+                           help="If true, filter stored RC rows and apply RC augmentation only to train.")
+        group.add_argument('--standardize_target', type=utils.str2bool, default=True,
+                           help="Whether to standardize the target before training.")
+        group.add_argument('--standardize_on_train_only', type=utils.str2bool, default=False,
+                           help="If true, fit target standardization using only train rows.")
         return parser
 
     @staticmethod
@@ -1063,9 +1100,25 @@ class PromoterDataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         # Read the CSV
         df = pd.read_csv(self.datafile_path)
-        
-        # Filter out RC sequences if not using them
-        if not self.use_reverse_complements and 'RC_bool' in df.columns:
+
+        required = [self.sequence_column, self.target_column, self.split_column]
+        missing = [column for column in required if column not in df.columns]
+        if missing:
+            raise ValueError(f"{self.datafile_path} is missing required columns: {missing}")
+
+        df[self.target_column] = pd.to_numeric(df[self.target_column], errors='coerce')
+        df = df.dropna(subset=required).copy().reset_index(drop=True)
+
+        # Filter out stored RC sequences unless explicitly using the historical
+        # stored-RC behavior. The split-safe promoter path uses original rows
+        # only, then augments train examples inside the dataset.
+        if self.train_only_reverse_complements and 'RC_bool' in df.columns:
+            df = df[df['RC_bool'] == False].reset_index(drop=True)
+            print(
+                "Filtered stored RC rows for train-only RC augmentation. "
+                f"Using {len(df)} original sequences."
+            )
+        elif not self.use_reverse_complements and 'RC_bool' in df.columns:
             df = df[df['RC_bool'] == False].reset_index(drop=True)
             print(f"Filtered out RC sequences. Using {len(df)} original sequences only.")
         elif self.use_reverse_complements and 'RC_bool' in df.columns:
@@ -1074,53 +1127,73 @@ class PromoterDataModule(pl.LightningDataModule):
         # Apply the appropriate padding function
         df['padded_seq'] = df.apply(self.padding_fn, axis=1)
         
-        # Standardize expression values - global standardization
-        self.expression_mean = df['expression'].mean()
-        self.expression_std = df['expression'].std()
-        if self.expression_std < 1e-8:  # Avoid division by very small numbers:
-            self.expression_std = 1
-        df['expression_standardized'] = (df['expression'] - self.expression_mean) / self.expression_std
-        
-        # Alternative: standardize within each complexity group
-        complexity_groups = df.groupby('complexity')
-        self.complexity_stats = {}
-        
-        for complexity, group in complexity_groups:
-            mean = group['expression'].mean()
-            std = group['expression'].std()
-            self.complexity_stats[complexity] = {'mean': mean, 'std': std}
-            
-            # Create standardized column names specific to each complexity
-            df.loc[df['complexity'] == complexity, f'expression_std_{complexity}'] = (
-                (df.loc[df['complexity'] == complexity, 'expression'] - mean) / std
+        # Split by the configured split column. Some historical promoter
+        # exports only contain train/val rows; keep test optional so post-fit
+        # evaluation can run automatically when a held-out split is present.
+        df_train = df[df[self.split_column] == 'train'].reset_index(drop=True)
+        df_val = df[df[self.split_column] == 'val'].reset_index(drop=True)
+        df_test = df[df[self.split_column] == 'test'].reset_index(drop=True)
+        if len(df_train) == 0:
+            raise ValueError(f"Training split is empty in {self.datafile_path}")
+        if len(df_val) == 0:
+            raise ValueError(f"Validation split is empty in {self.datafile_path}")
+
+        output_target_column = self.target_column
+        if self.standardize_target:
+            stats_df = df_train if self.standardize_on_train_only else df
+            self.expression_mean = stats_df[self.target_column].mean()
+            self.expression_std = stats_df[self.target_column].std()
+            if self.expression_std < 1e-8:  # Avoid division by very small numbers:
+                self.expression_std = 1
+            output_target_column = f'{self.target_column}_standardized'
+            for split_df in (df_train, df_val, df_test):
+                split_df[output_target_column] = (
+                    split_df[self.target_column] - self.expression_mean
+                ) / self.expression_std
+            print(
+                f"Standardized {self.target_column} using "
+                f"{'train' if self.standardize_on_train_only else 'all'} rows: "
+                f"mean={self.expression_mean:.6g}, std={self.expression_std:.6g}"
             )
         
-        # Split by the 'set' column. Some historical promoter exports only
-        # contain train/val rows; keep test optional so post-fit evaluation can
-        # run automatically when a held-out split is present without warning on
-        # older tables.
-        df_train = df[df['set'] == 'train'].reset_index(drop=True)
-        df_val = df[df['set'] == 'val'].reset_index(drop=True)
-        df_test = df[df['set'] == 'test'].reset_index(drop=True)
-        
+        # Alternative: standardize within each complexity group
+        self.complexity_stats = {}
+        if 'complexity' in df.columns:
+            for complexity, group in df.groupby('complexity'):
+                mean = group[self.target_column].mean()
+                std = group[self.target_column].std()
+                self.complexity_stats[complexity] = {'mean': mean, 'std': std}
+
+        self.df_train = df_train
+        self.df_val = df_val
+        self.df_test = df_test
+
+        train_use_rc = self.train_only_reverse_complements and self.use_reverse_complements
+        print(
+            "Promoter split sizes: "
+            f"train={len(df_train)}, val={len(df_val)}, test={len(df_test)}; "
+            f"train_only_rc={train_use_rc}"
+        )
+
         # Create datasets using standardized values
         self.dataset_train = PromoterDataset(
             df_train, 
             sequence_column='padded_seq',
-            target_column='expression_standardized'
+            target_column=output_target_column,
+            use_reverse_complements=train_use_rc,
         )
         
         self.dataset_val = PromoterDataset(
             df_val, 
             sequence_column='padded_seq',
-            target_column='expression_standardized'
+            target_column=output_target_column,
         )
 
         if len(df_test) > 0:
             self.dataset_test = PromoterDataset(
                 df_test,
                 sequence_column='padded_seq',
-                target_column='expression_standardized'
+                target_column=output_target_column,
             )
 
     def train_dataloader(self):

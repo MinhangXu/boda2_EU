@@ -51,8 +51,8 @@ Data inputs:
 - Current BODA UTR models from:
   - `src/learn/run_registry/best_runs.csv`
 - In-house candidate tables:
-  - `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/FivePrimes/L1_final_fastqs1-5_sublibrary_FivePrime_subset.csv`
-  - `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/ThreePrimes/L1_final_fastqs1-5_sublibrary_ThreePrime_subset.csv`
+  - `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/FivePrimes/L1_final_fastqs1-5_sublibrary_FivePrime_subset.csv`
+  - `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/ThreePrimes/L1_final_fastqs1-5_sublibrary_ThreePrime_subset.csv`
 
 Metrics:
 

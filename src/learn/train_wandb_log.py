@@ -38,6 +38,14 @@ from lightning.pytorch.loggers import WandbLogger
 #  Provenance defs  #
 #####################
 
+WANDB_HISTORY_CONTRACT_VERSION = "canonical_metrics_v2"
+WANDB_HISTORY_CANARY_KEY = "wandb_history_canary"
+CANONICAL_WANDB_HISTORY_METRICS = tuple(
+    f"{split}_{metric}"
+    for split in ("train", "val", "test")
+    for metric in ("loss", "mse", "pearson", "pearson_r2", "spearman", "cod_r2")
+)
+
 # Canonical column order for the per-run manifest written to
 # `src/learn/run_registry/runs.csv`. Extend intentionally; never reorder.
 RUNS_CSV_COLUMNS = [
@@ -118,6 +126,31 @@ def _coerce_scalar(value: Any) -> Any:
             return str(value)
         except Exception:
             return None
+
+
+def _configure_wandb_history_contract() -> None:
+    """Define canonical W&B history metrics and emit a cloud-history canary row."""
+    if wandb.run is None:
+        raise RuntimeError(
+            "W&B logger_type=wandb was requested, but wandb.run is not initialized. "
+            "Check wandb login/API key, WANDB_MODE, entity/project access, and network connectivity."
+        )
+
+    wandb.define_metric("trainer/global_step")
+    wandb.define_metric("epoch", step_metric="trainer/global_step")
+    wandb.define_metric(WANDB_HISTORY_CANARY_KEY, step_metric="trainer/global_step")
+    for key in CANONICAL_WANDB_HISTORY_METRICS:
+        wandb.define_metric(key, step_metric="trainer/global_step")
+
+    wandb.run.summary["wandb_history_contract"] = WANDB_HISTORY_CONTRACT_VERSION
+    wandb.log(
+        {
+            "trainer/global_step": 0,
+            "epoch": 0,
+            WANDB_HISTORY_CANARY_KEY: 1.0,
+        },
+        commit=True,
+    )
 
 
 def _resolve_git_commit() -> Optional[str]:
@@ -222,6 +255,29 @@ def build_provenance_record(
                 return value
         return None
 
+    def _squared_pearson_fallback(prefix: str) -> Any:
+        explicit_keys = [
+            f"{prefix}_pearson_r2",
+            f"epoch_end_{prefix}_pearson_r2",
+            f"{prefix}_r2",
+            f"epoch_end_{prefix}_r2",
+        ]
+        if prefix == "val":
+            explicit_keys.append("val_r2_score")
+        explicit = _get_first(*explicit_keys)
+        if explicit is not None:
+            return explicit
+        pearson = _get(f"{prefix}_pearson")
+        if pearson is None:
+            pearson = _get(f"epoch_end_{prefix}_pearson")
+        if pearson is None:
+            return None
+        try:
+            pearson = float(pearson)
+            return pearson * pearson
+        except Exception:
+            return None
+
     record = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "run_id": identity.get("run_id") or "",
@@ -245,15 +301,15 @@ def build_provenance_record(
         "best_metric_name": best_metric_name or "",
         "best_metric_value": best_metric_value if best_metric_value is not None else "",
         "val_loss": _get("val_loss"),
-        "val_r2": _get_first("val_pearson_r2", "epoch_end_val_pearson_r2", "epoch_end_val_r2", "val_r2_score"),
+        "val_r2": _squared_pearson_fallback("val"),
         "val_pearson": _get("val_pearson") if _get("val_pearson") is not None else _get("epoch_end_val_pearson"),
         "val_spearman": _get("val_spearman") if _get("val_spearman") is not None else _get("epoch_end_val_spearman"),
         "test_loss": _get("test_loss"),
-        "test_r2": _get_first("test_pearson_r2", "epoch_end_test_pearson_r2", "test_r2", "epoch_end_test_r2"),
+        "test_r2": _squared_pearson_fallback("test"),
         "test_pearson": _get("test_pearson") if _get("test_pearson") is not None else _get("epoch_end_test_pearson"),
         "test_spearman": _get("test_spearman") if _get("test_spearman") is not None else _get("epoch_end_test_spearman"),
         "train_loss": _get("train_loss"),
-        "train_r2": _get_first("train_pearson_r2", "epoch_end_train_pearson_r2", "train_r2", "epoch_end_train_r2"),
+        "train_r2": _squared_pearson_fallback("train"),
         "train_pearson": _get("train_pearson") if _get("train_pearson") is not None else _get("epoch_end_train_pearson"),
         "train_spearman": _get("train_spearman") if _get("train_spearman") is not None else _get("epoch_end_train_spearman"),
         "artifact_path": artifact_path or "",
@@ -261,13 +317,13 @@ def build_provenance_record(
         "hostname": socket.gethostname(),
         "git_commit": _resolve_git_commit() or "",
         "notes": os.environ.get("BODA_LAUNCH_NOTES", os.environ.get("LAUNCH_NOTES", "")),
-        "val_pearson_r2": _get_first("val_pearson_r2", "epoch_end_val_pearson_r2", "epoch_end_val_r2", "val_r2_score"),
+        "val_pearson_r2": _squared_pearson_fallback("val"),
         "val_cod_r2": _get_first("val_cod_r2", "epoch_end_val_cod_r2"),
         "val_mse": _get_first("val_mse", "epoch_end_val_mse"),
-        "test_pearson_r2": _get_first("test_pearson_r2", "epoch_end_test_pearson_r2", "test_r2", "epoch_end_test_r2"),
+        "test_pearson_r2": _squared_pearson_fallback("test"),
         "test_cod_r2": _get_first("test_cod_r2", "epoch_end_test_cod_r2"),
         "test_mse": _get_first("test_mse", "epoch_end_test_mse"),
-        "train_pearson_r2": _get_first("train_pearson_r2", "epoch_end_train_pearson_r2", "train_r2", "epoch_end_train_r2"),
+        "train_pearson_r2": _squared_pearson_fallback("train"),
         "train_cod_r2": _get_first("train_cod_r2", "epoch_end_train_cod_r2"),
         "train_mse": _get_first("train_mse", "epoch_end_train_mse"),
     }
@@ -391,6 +447,50 @@ def convert_to_list(param):
     else:
         return param
 
+def _coerce_split_list(value):
+    """Normalize CLI/W&B split lists such as `train val test` or `[train,val]`."""
+    parsed = convert_to_list(value)
+    if parsed is None:
+        return ["val"]
+    if isinstance(parsed, str):
+        parsed = parsed.replace(",", " ").split()
+    if not isinstance(parsed, list):
+        parsed = [parsed]
+    splits = [str(item).strip() for item in parsed if str(item).strip()]
+    return splits or ["val"]
+
+def configure_epoch_eval_dataloaders(data, graph, split_names):
+    """
+    Optionally evaluate named data splits every validation epoch.
+
+    Lightning treats extra validation dataloaders as diagnostic loaders. The
+    graph maps them back to canonical prefixes (`train_*`, `val_*`, `test_*`)
+    and checkpointing remains controlled by whatever `checkpoint_monitor`
+    names, typically a validation metric such as `val_pearson`.
+    """
+    split_names = _coerce_split_list(split_names)
+    valid_splits = {"train", "val", "test"}
+    unknown = [split for split in split_names if split not in valid_splits]
+    if unknown:
+        raise ValueError(f"Unknown epoch_eval_splits values: {unknown}. Use train, val, and/or test.")
+
+    if split_names == ["val"]:
+        return split_names
+
+    loader_fns = {}
+    for split in split_names:
+        method_name = "train_eval_dataloader" if split == "train" and hasattr(data, "train_eval_dataloader") else f"{split}_dataloader"
+        if not hasattr(data, method_name):
+            raise ValueError(f"{data.__class__.__name__} has no {method_name} for epoch diagnostics.")
+        loader_fns[split] = getattr(data, method_name)
+
+    def diagnostic_val_dataloader():
+        return [loader_fns[split]() for split in split_names]
+
+    data.val_dataloader = diagnostic_val_dataloader
+    graph.validation_loader_names = split_names
+    return split_names
+
 def _normalize_optional_name(value):
     """Treat string sentinels like 'None' as Python None."""
     if value is None:
@@ -474,12 +574,12 @@ def publish_best_checkpoint_model(local_dir, final_artifact_path, provenance_rec
     directory for human browsing and downstream handoff.
 
     The full archive in `local_artifacts` remains the canonical portable
-    artifact. This publisher mirrors the useful pieces into:
+    artifact. This publisher writes a small pointer/metadata layer into:
 
         <best_checkpoint_dir>/<run_id>/
 
     so the noisy Lightning/W&B run directories do not need to be the first
-    place humans look.
+    place humans look, without duplicating large model payloads.
     """
     if args is None:
         return None
@@ -494,27 +594,31 @@ def publish_best_checkpoint_model(local_dir, final_artifact_path, provenance_rec
     publish_dir = os.path.join(publish_root, run_id)
     os.makedirs(publish_dir, exist_ok=True)
 
-    copied_files = {}
+    linked_files = {}
 
-    def _copy_if_exists(src, dest_name):
+    def _link_if_exists(src, dest_name):
         if not src or not os.path.isfile(src):
             return
         dest = os.path.join(publish_dir, dest_name)
-        shutil.copy2(src, dest)
-        copied_files[dest_name] = dest
+        try:
+            if os.path.lexists(dest):
+                os.unlink(dest)
+            os.symlink(os.path.abspath(src), dest)
+            linked_files[dest_name] = dest
+        except Exception as exc:
+            print(f"WARN: failed to create symlink {dest} -> {src}: {exc}", file=sys.stderr)
 
-    _copy_if_exists(os.path.join(local_dir, 'torch_checkpoint.pt'), 'torch_checkpoint.pt')
-    _copy_if_exists(final_artifact_path, 'model_artifacts.tar.gz')
+    # Keep the human-facing mirror lightweight. The canonical tarball contains
+    # artifacts/torch_checkpoint.pt and artifacts/provenance.json.
+    if final_artifact_path and not str(final_artifact_path).startswith('gs://'):
+        _link_if_exists(final_artifact_path, 'model_artifacts.tar.gz')
 
     best_model_path = ""
     mc = use_callbacks.get('model_checkpoint') if use_callbacks else None
     if mc is not None:
         best_model_path = getattr(mc, 'best_model_path', "") or ""
         if best_model_path.startswith('gs://'):
-            # Avoid implicit network copies in the publisher. The canonical
-            # tarball already contains the best weights via torch_checkpoint.pt.
             best_model_path = ""
-    _copy_if_exists(best_model_path, 'lightning_best.ckpt')
 
     published_provenance = dict(provenance_record)
     if final_artifact_path:
@@ -532,7 +636,8 @@ def publish_best_checkpoint_model(local_dir, final_artifact_path, provenance_rec
         'best_epoch': provenance_record.get('best_epoch', ''),
         'source_lightning_checkpoint': best_model_path,
         'source_artifact_path': final_artifact_path or '',
-        'copied_files': copied_files,
+        'linked_files': linked_files,
+        'artifact_contents': ['artifacts/torch_checkpoint.pt', 'artifacts/provenance.json'],
     }
     with open(os.path.join(publish_dir, 'selection.json'), 'w') as fh:
         json.dump(selection, fh, indent=2, default=str)
@@ -552,6 +657,32 @@ def publish_best_checkpoint_model(local_dir, final_artifact_path, provenance_rec
         wandb.run.summary["best_checkpoint_publish_dir"] = publish_dir
 
     return publish_dir
+
+
+def prune_lightning_checkpoints(use_callbacks=None, keep=False):
+    """Remove transient Lightning .ckpt files after the portable artifact is saved."""
+    if keep or not use_callbacks:
+        return []
+
+    removed = []
+    mc = use_callbacks.get('model_checkpoint')
+    best_model_path = getattr(mc, 'best_model_path', "") if mc is not None else ""
+    checkpoint_dirs = set()
+    if best_model_path and not best_model_path.startswith('gs://') and os.path.isfile(best_model_path):
+        checkpoint_dirs.add(os.path.dirname(best_model_path))
+        try:
+            os.remove(best_model_path)
+            removed.append(best_model_path)
+        except OSError as exc:
+            print(f"WARN: failed to remove transient checkpoint {best_model_path}: {exc}", file=sys.stderr)
+
+    for checkpoint_dir in checkpoint_dirs:
+        try:
+            if os.path.isdir(checkpoint_dir) and not os.listdir(checkpoint_dir):
+                os.rmdir(checkpoint_dir)
+        except OSError:
+            pass
+    return removed
 
 
 def save_model(data_module, model_module, graph_module, model, trainer, args,
@@ -623,7 +754,9 @@ def save_model(data_module, model_module, graph_module, model, trainer, args,
     with tempfile.TemporaryDirectory() as tmpdirname:
         tar_src = os.path.join(tmpdirname, filename)
         with tarfile.open(tar_src, 'w:gz') as tar:
-            tar.add(local_dir, arcname='artifacts')
+            tar.add(os.path.join(local_dir, 'torch_checkpoint.pt'), arcname='artifacts/torch_checkpoint.pt')
+            if os.path.isfile(provenance_path):
+                tar.add(provenance_path, arcname='artifacts/provenance.json')
 
         if 'gs://' in artifact_dir:
             final_artifact_path = os.path.join(artifact_dir, filename)
@@ -643,9 +776,18 @@ def save_model(data_module, model_module, graph_module, model, trainer, args,
         args=args,
     )
 
+    removed_checkpoints = prune_lightning_checkpoints(
+        use_callbacks=use_callbacks or {},
+        keep=bool(getattr(args['Main args'], 'keep_lightning_checkpoints', False)),
+    )
+    if removed_checkpoints:
+        print(f"Pruned {len(removed_checkpoints)} transient Lightning checkpoint(s).")
+
     if wandb.run is not None:
         wandb.run.summary["model_saved_path"] = final_artifact_path
         wandb.run.summary["model_artifact_filename"] = filename
+        if removed_checkpoints:
+            wandb.run.summary["pruned_lightning_checkpoint_count"] = len(removed_checkpoints)
 
     return final_artifact_path
 
@@ -657,8 +799,7 @@ def save_model(data_module, model_module, graph_module, model, trainer, args,
 def _log_train_eval_metrics(graph, data):
     """
     Run a single forward pass over the training dataloader using the best
-    checkpoint and log (train_loss, train_pearson_r2, train_cod_r2,
-    train_mse, train_pearson, train_spearman) to the active W&B run summary so
+    checkpoint and log canonical train metrics to the active W&B run summary so
     `runs.csv` gets populated.
 
     This is intentionally separate from `training_step` / `validation_step`:
@@ -718,10 +859,6 @@ def _log_train_eval_metrics(graph, data):
     all_labels = torch.cat(labels, dim=0)
 
     try:
-        train_pearson_r2 = float(pearson_r2_score(all_labels, all_preds))
-    except Exception:
-        train_pearson_r2 = None
-    try:
         train_cod_r2 = float(coefficient_of_determination(all_labels, all_preds))
     except Exception:
         train_cod_r2 = None
@@ -746,15 +883,15 @@ def _log_train_eval_metrics(graph, data):
     summary_updates = {
         "train_loss": train_loss,
         "train_mse": train_mse,
-        "train_pearson_r2": train_pearson_r2,
         "train_cod_r2": train_cod_r2,
         "train_pearson": train_pearson,
         "train_spearman": train_spearman,
     }
 
     try:
+        log_per_output = bool(getattr(graph, "log_per_output_metric_details", True))
         metric_source = train_pearson_vals if train_pearson_vals is not None else train_spearman_vals
-        if metric_source is not None:
+        if log_per_output and metric_source is not None:
             if metric_source.dim() == 0:
                 metric_source = metric_source.unsqueeze(0)
             n_outputs = int(metric_source.numel())
@@ -775,7 +912,8 @@ def _log_train_eval_metrics(graph, data):
                 if train_pearson_vals is not None and idx < train_pearson_vals.numel():
                     coeff = float(train_pearson_vals[idx])
                     summary_updates[f"train_pearson_{name}"] = coeff
-                    summary_updates[f"train_pearson_squared_{name}"] = coeff ** 2
+                    if bool(getattr(graph, "log_legacy_metric_aliases", True)):
+                        summary_updates[f"train_pearson_squared_{name}"] = coeff ** 2
                 if train_spearman_vals is not None and idx < train_spearman_vals.numel():
                     summary_updates[f"train_spearman_{name}"] = float(train_spearman_vals[idx])
                 if idx < train_mse_vals.numel():
@@ -789,6 +927,23 @@ def _log_train_eval_metrics(graph, data):
                 wandb.run.summary[k] = v
             except Exception:
                 pass
+    history_updates = {
+        key: value
+        for key, value in summary_updates.items()
+        if value is not None and isinstance(value, (int, float))
+    }
+    if history_updates:
+        try:
+            history_updates["trainer/global_step"] = int(getattr(graph, "global_step", 0))
+            history_updates["epoch"] = int(getattr(graph, "current_epoch", 0))
+            wandb.log(history_updates, commit=True)
+        except Exception as exc:
+            if os.environ.get("BODA_REQUIRE_WANDB_HISTORY") == "1":
+                raise RuntimeError(
+                    "Failed to write train-set canonical metrics to W&B history. "
+                    "Cloud chart/history verification would be unreliable."
+                ) from exc
+            print(f"WARN: train-set W&B history logging failed: {exc}", file=sys.stderr)
     print("Train-set eval summary: " + ", ".join(
         f"{k}={v}" for k, v in summary_updates.items() if v is not None
     ))
@@ -1023,6 +1178,11 @@ def main(args):
     model_module = getattr(boda.model, args['Main args'].model_module)
     graph_module = getattr(boda.graph, args['Main args'].graph_module)
 
+    model_seed = getattr(args['Main args'], 'model_seed', None)
+    if model_seed is not None:
+        utils.set_all_seeds(int(model_seed))
+        print(f"Set model/training random seed: {model_seed}")
+
     # Initialize data module
     data_args = data_module.process_args(args)
     
@@ -1044,12 +1204,30 @@ def main(args):
     # Initialize graph module with model
     graph = graph_module(model=model, **vars(graph_module.process_args(args)))
 
+    epoch_eval_splits = configure_epoch_eval_dataloaders(
+        data,
+        graph,
+        args['Main args'].epoch_eval_splits,
+    )
+    print(f"Epoch diagnostic eval splits: {epoch_eval_splits}")
+
     # Set up logger based on command-line input
+    run_id = ""
+    run_name = args['Main args'].run_name
+    os.environ["BODA_REQUIRE_WANDB_HISTORY"] = "0"
     if args['Main args'].logger_type.lower() == 'wandb':
+        wandb_mode = os.environ.get("WANDB_MODE", "").strip().lower()
+        if wandb_mode in {"disabled", "dryrun", "offline"}:
+            raise RuntimeError(
+                "logger_type=wandb requires online W&B history for standardized HPO. "
+                "Unset WANDB_MODE or set WANDB_MODE=online before launching."
+            )
         try:
             # Generate a unique run ID and process the run name
             run_id = wandb.util.generate_id()
-            if "{runid}" in args['Main args'].run_name:
+            if args['Main args'].exact_run_name:
+                run_name = args['Main args'].run_name
+            elif "{runid}" in args['Main args'].run_name:
                 run_name = args['Main args'].run_name.replace("{runid}", run_id)
             else:
                 run_name = f"{args['Main args'].run_name}_{run_id}"
@@ -1072,12 +1250,17 @@ def main(args):
                     all_hparams.update(group_dict)
             
             logger.log_hyperparams(all_hparams)
+            _configure_wandb_history_contract()
+            os.environ["BODA_REQUIRE_WANDB_HISTORY"] = "1"
             
             print(f"Initialized Wandb logging with run ID: {run_id}, name: {run_name}")
         except Exception as e:
-            print(f"Wandb initialization failed: {str(e)}")
-            print("Falling back to default logger")
-            logger = True
+            raise RuntimeError(
+                "W&B initialization failed for logger_type=wandb. "
+                "The run was not started because standardized Lib1 HPO requires "
+                "cloud history rows for val/train/test metrics. Check `wandb login`, "
+                "WANDB_API_KEY, WANDB_MODE, entity/project permissions, and network connectivity."
+            ) from e
     elif args['Main args'].logger_type.lower() == 'tensorboard':
         logger = pl_loggers.TensorBoardLogger(
             save_dir='./logs',
@@ -1090,13 +1273,26 @@ def main(args):
     print(f"Generated run_id: {run_id}")
     print(f"Processed run_name: {run_name}")
 
+    trainer_root_dir = args['pl.Trainer'].default_root_dir
+    if trainer_root_dir is None:
+        trainer_root_dir = '/tmp/output/artifacts'
+    if not str(trainer_root_dir).startswith('gs://'):
+        trainer_root_dir = os.path.abspath(os.path.expanduser(str(trainer_root_dir)))
+    args['pl.Trainer'].default_root_dir = trainer_root_dir
+
     # Set up callbacks
     use_callbacks = {
         'learning_rate_monitor': LearningRateMonitor()
     }
     
     if args['Main args'].checkpoint_monitor is not None:
+        checkpoint_dir = (
+            os.path.join(trainer_root_dir, 'checkpoints')
+            if not str(trainer_root_dir).startswith('gs://')
+            else os.path.join(trainer_root_dir, 'checkpoints')
+        )
         use_callbacks['model_checkpoint'] = ModelCheckpoint(
+            dirpath=checkpoint_dir,
             save_top_k=1,
             monitor=args['Main args'].checkpoint_monitor,
             mode=args['Main args'].stopping_mode
@@ -1173,6 +1369,17 @@ def main(args):
     # Build provenance once so it lands in both the tarball and runs.csv.
     # The W&B run is still live here; identifiers are available from wandb.run.
     provenance = build_provenance_record(args, use_callbacks, artifact_path=None, status='completed')
+    split_summary = getattr(data, 'split_summary', None)
+    if isinstance(split_summary, dict):
+        provenance['data_split_summary'] = split_summary
+        if wandb.run is not None:
+            try:
+                wandb.run.summary['data_split_summary_json'] = json.dumps(split_summary, sort_keys=True, default=str)
+                for key in ('train_subsample_seed', 'train_pool_row_id_hash', 'train_final_row_id_hash'):
+                    if key in split_summary:
+                        wandb.run.summary[f'data_split_{key}'] = split_summary[key]
+            except Exception:
+                pass
 
     artifact_file = save_model(
         data_module, model_module, graph_module, graph.model, trainer, args,
@@ -1210,6 +1417,8 @@ if __name__ == '__main__':
                        help='Path where model artifacts are deposited.')
     group.add_argument('--best_checkpoint_dir', type=str, default='',
                        help='Optional clean directory where each run publishes its best model bundle under <run_id>/.')
+    group.add_argument('--keep_lightning_checkpoints', type=utils.str2bool, default=False,
+                       help='Keep transient Lightning .ckpt files after exporting the portable artifact.')
     group.add_argument('--pretrained_weights', type=str, help='Pretrained weights.')
     group.add_argument('--checkpoint_monitor', type=str,
                        help='String to monitor PTL logs if saving best.')
@@ -1227,6 +1436,12 @@ if __name__ == '__main__':
                        help='Project name for the logger.')
     group.add_argument('--run_name', type=str, default='default_run',
                        help='Run name for the logger.')
+    group.add_argument('--exact_run_name', type=utils.str2bool, default=False,
+                       help='Use run_name exactly instead of appending/replacing a generated run id.')
+    group.add_argument('--epoch_eval_splits', type=str, nargs='+', default=['val'],
+                       help='Splits to evaluate every validation epoch, e.g. val or train val test.')
+    group.add_argument('--model_seed', type=int, default=None,
+                       help='Optional seed for model initialization and trainer-side randomness.')
 
     # Parse initial arguments to get module classes
     known_args, leftover_args = parser.parse_known_args()

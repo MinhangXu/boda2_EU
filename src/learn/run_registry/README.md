@@ -11,6 +11,9 @@ and HPO bookkeeping.
   - append-only per-run manifest written by `src/learn/train_wandb_log.py`
 - `sweep_launches.csv`
   - append-only sweep launch log written by scripts in `src/learn/launch/`
+- `wandb_history_exports/`
+  - local fallback exports from `src/learn/export_wandb_history.py` when W&B
+    cloud summaries exist but chart/history rows are not queryable
 
 ## Intended Use
 
@@ -33,10 +36,23 @@ Use `sweep_launches.csv` when you need to answer:
 - how many agents / runs were used?
 - which GPUs were assigned?
 
+Use `wandb_history_exports/` when W&B Charts or `scan_history` are blank for a
+run that has local `src/learn/wandb/run-*/run-*.wandb` files. Export a sweep
+with:
+
+```bash
+conda run --no-capture-output -n boda_env python src/learn/export_wandb_history.py \
+  --project <wandb_project> \
+  --sweep-id <sweep_id> \
+  --output-dir src/learn/run_registry/wandb_history_exports/<short_name>
+```
+
 ## Workflow
 
 1. launch a sweep using `src/learn/launch/`
 2. let the launcher append a row to `sweep_launches.csv`
 3. inspect results in W&B
-4. confirm best checkpoints in notebook or local cache
-5. promote the winning run into `best_runs.csv`
+4. if W&B charts are blank, export local history rows with
+   `src/learn/export_wandb_history.py`
+5. confirm best checkpoints in notebook or local cache
+6. promote the winning run into `best_runs.csv`

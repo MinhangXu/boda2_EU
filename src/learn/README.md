@@ -162,12 +162,13 @@ The usual local state for a `train_wandb_log.py` run is split across a few place
   - temporary trainer scratch space controlled by `default_root_dir`
   - Lightning checkpoints and transient files land here first
   - successful runs later bundle/copy the final payload into `artifact_path`
+    and prune transient Lightning checkpoints by default
   - safe to prune when you no longer need intermediate checkpoints/logs
 - `outputs/hpo_runs/by_project/<wandb_project_name>/`
-  - per-W&B-project run roots for HPO sweeps
-  - contains run-id subdirectories with Lightning checkpoints plus
-    `best_checkpoint_model/<run_id>/` convenience copies when
-    `best_checkpoint_dir` is configured
+  - per-W&B-project browsing layer for HPO sweeps
+  - `best_checkpoint_model/<run_id>/` contains provenance/selection metadata
+    and local symlinks to canonical artifacts when `best_checkpoint_dir` is
+    configured
   - this is the home for directories named like
     `promoter__bashor_in_house__lib1_allvalid__scratch__promoter_bassetvl/`
   - do not leave those project-shaped directories directly under `src/learn/`
@@ -248,12 +249,20 @@ Current configs / launchers:
 - `configs/enhancer/bashor_in_house/bassetvl/lib1_enhancer_no_flank_hq8__scratch_bassetvl__bayes.yml`
 - `launch/lib1_enhancer_no_flank_hq8_scratch_resnet1d_sweep.sh`
 - `launch/lib1_enhancer_no_flank_hq8_scratch_bassetvl_sweep.sh`
+- log2-target side test:
+  - `configs/enhancer/bashor_in_house/resnet1d/lib1_enhancer_no_flank_hq8_log2target__scratch_resnet1d__bayes.yml`
+  - `configs/enhancer/bashor_in_house/bassetvl/lib1_enhancer_no_flank_hq8_log2target__scratch_bassetvl__bayes.yml`
+  - `launch/lib1_enhancer_no_flank_hq8_log2target_scratch_resnet1d_sweep.sh`
+  - `launch/lib1_enhancer_no_flank_hq8_log2target_scratch_bassetvl_sweep.sh`
 - `configs/enhancer/malinois_mpra/basset_branched/enhancer__malinois_mpra__basset_branched__transfer_baseline.yml`
 - `launch/enhancer_malinois_basset_branched_baseline.sh`
 
 In-house lib1 scratch notes:
 
 - target column: `RNA_DNA_Ratio_log10_scaled`
+- log2-target side-test column: `log2_RNA_DNA`, computed from the same
+  `RNA/DNA` ratio as `log2(RNA/DNA)` for comparability with promoter, intron,
+  3'UTR, and 5'UTR
 - sequence column: `Enhancers`
 - current no-flank HQ8 scratch HPO uses standardized Lib1 split controls and
   canonical W&B metric history logging

@@ -44,11 +44,13 @@ DEFAULT_OUTDIR = (
 DEFAULT_RUNS_CSV = REPO_ROOT / "src" / "learn" / "run_registry" / "runs.csv"
 DEFAULT_PROMOTER_PATH = (
     Path("/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1")
+    / "single_part_variant_level"
     / "promoters"
     / "L1_final_fastqs1-5_sublibrary_Promoter_subset.csv"
 )
 DEFAULT_INTRON_PATH = (
     Path("/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1")
+    / "single_part_variant_level"
     / "introns"
     / "L1_final_fastqs1-5_sublibrary_Intron_subset.csv"
 )

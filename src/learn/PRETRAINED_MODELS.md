@@ -42,8 +42,8 @@ There are three related outputs, with different jobs:
 | Location | What it is | When to use it |
 | --- | --- | --- |
 | `local_artifacts/**/*.tar.gz` | Portable model bundle written after the best checkpoint is restored. Contains `artifacts/torch_checkpoint.pt` and `artifacts/provenance.json`. | Default source for transfer learning, inference, and registry promotion. |
-| `<wandb_project>/<run_id>/checkpoints/*.ckpt` | Raw PyTorch Lightning checkpoint produced during training. | Resume/debug a Lightning training run, inspect callback state, or recover when artifact export failed. |
-| `<wandb_project>/best_checkpoint_model/<run_id>/` | Optional clean mirror for humans, enabled by `--best_checkpoint_dir`. Contains the portable checkpoint plus provenance and selection metadata, and copies `lightning_best.ckpt` when local. | Quick browsing and handoff without hunting through long artifact names or raw run folders. |
+| `outputs/.../<run>/checkpoints/*.ckpt` | Raw PyTorch Lightning checkpoint produced during training and pruned after successful artifact export by default. | Resume/debug an in-progress or failed Lightning training run, inspect callback state, or recover when artifact export failed. |
+| `outputs/hpo_runs/by_project/<wandb_project>/best_checkpoint_model/<run_id>/` | Optional clean pointer layer for humans, enabled by `--best_checkpoint_dir`. Contains provenance and selection metadata plus a symlink to the portable tarball when local. | Quick browsing and handoff without duplicating the model payload. |
 
 The `.ckpt` files are useful, but they are not the main pretrained-model
 handoff format. `train_wandb_log.py` calls `set_best` before `save_model`,
@@ -57,7 +57,8 @@ run_registry/best_runs.csv -> model_saved_path/artifact_path -> local_artifacts/
 ```
 
 The `best_checkpoint_model/` directory is just a predictable browsing layer.
-It does not replace `local_artifacts/` or the registry.
+It does not replace `local_artifacts/` or the registry and should not contain
+extra full-size copies of the same model.
 
 ## Promoting a run to the "best" list
 

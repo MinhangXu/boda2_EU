@@ -37,7 +37,7 @@ BASE_SCRIPT_PATH = THIS_DIR / "lib1_enhancer_learning_curve_finetune_updated.py"
 SPLIT_SCRIPT_PATH = THIS_DIR / "lib1_enhancer_learning_curve_finetune_split_options.py"
 
 DEFAULT_DATA_PATH = Path(
-    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/"
+    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/"
     "L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv"
 )
 DEFAULT_MODEL_PATH = (

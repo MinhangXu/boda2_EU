@@ -21,7 +21,7 @@ VAL_SIZE_WITHIN_HQ="${VAL_SIZE_WITHIN_HQ:-250}"
 TEST_SIZE_WITHIN_HQ="${TEST_SIZE_WITHIN_HQ:-250}"
 DRY_RUN="${DRY_RUN:-0}"
 
-SOURCE_DATA="/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv"
+SOURCE_DATA="/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv"
 LEARN_READY_DATA="${LEARN_DIR}/derived_data/enhancer/bashor_in_house/lib1_fastqs1_5_0filtered_out__learn_ready.tsv"
 
 if [[ "${PREPARE_DATASET}" == "1" ]]; then

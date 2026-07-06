@@ -234,7 +234,7 @@ Checklist:
 
 Immediate enhancer dataset:
 
-- `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt`
+- `/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/20251218_np_fastq1_500000NPreads_enh_variants_bc_sum_avg_expression.txt`
 
 Observed columns:
 

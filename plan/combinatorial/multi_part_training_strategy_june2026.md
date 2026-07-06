@@ -1,6 +1,6 @@
 # Multi-Part Combinatorial Training Strategy
 
-Generated: 2026-06-08
+Generated: 2026-06-09
 
 This plan starts after the single-part modeling scaffold is clean enough to be
 usable as context. It connects enhancer, promoter, 5 Prime UTR, intron, and
@@ -11,10 +11,10 @@ usable as context. It connects enhancer, promoter, 5 Prime UTR, intron, and
 | Part class | Pretraining | Fine-tune | From scratch | Immediate next question |
 |---|---|---|---|---|
 | Enhancer | BODA2/Malinois checkpoint available | In-house Lib1 fine-tune mostly complete | Weak current evidence | Run/commit the cleaner scratch comparison only if needed; otherwise use transfer as the baseline. |
-| Promoter | Legacy in-house e7/e30 pretraining exists, but needs a split-safe rerun | Pending | Pending for new Lib1 | Compare legacy e7/e30 pretraining, Lib1 scratch, and legacy-to-Lib1 fine-tune. |
+| Promoter | Legacy in-house e7/e30 pretraining exists, but needs a split-safe rerun | Pending | June Lib1 scratch HPO complete for ResNet1D and BassetVL | Decide modal50 versus allvalid/51-padded input policy, then compare scratch against legacy-to-Lib1 fine-tune. |
 | 5 Prime UTR | Hani Lib1/Lib2 pretraining complete | Phase 2 and June in-house HPO complete | Phase 3 scratch complete | Decide whether Phase 2 fine-tune or Phase 3 scratch is the better seed for combinatorial work. |
-| Intron | Seelig pretraining complete | Pipeline being figured out | Public scratch complete | Fix the in-house transfer mismatch before combinatorial inclusion. |
-| 3 Prime UTR | Hani pretraining complete | Pending | Pending/current public scratch exists | Run from-scratch and fine-tune comparisons. |
+| Intron | Seelig pretraining complete | Pipeline being figured out | June Lib1 modal80 ResNet scratch HPO complete | Confirm architecture/RC and decide whether Seelig fine-tune adds value. |
+| 3 Prime UTR | Hani pretraining complete | Pending | June Lib1 modal100 ResNet/Basset scratch HPO complete | Synthesize BassetVL focused RC factorial and compare against deliberate length-context/fine-tune branches. |
 
 ## Training Scenarios
 

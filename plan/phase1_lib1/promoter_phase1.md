@@ -1,6 +1,6 @@
 # Promoter Phase 1 Plan
 
-Generated: 2026-06-08
+Generated: 2026-06-09
 
 This plan corrects the promoter framing for Phase 1. The e7 and e30 core
 promoter libraries are legacy in-house promoter libraries from an older
@@ -68,7 +68,7 @@ is not available yet for legacy e7/e30 unless we reconstruct provenance.
 
 Current Lib1 promoter table:
 
-`/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/promoters/L1_final_fastqs1-5_sublibrary_Promoter_subset.csv`
+`/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/promoters/L1_final_fastqs1-5_sublibrary_Promoter_subset.csv`
 
 Observed shape is 7,894 rows. One-shot scoring found 7,893 usable sequence
 rows after sequence validation. The table has `number_of_barcodes`,
@@ -92,6 +92,14 @@ Most promoter inserts are 50 nt: 7,774 rows are exactly 50 nt, with a small
 tail from 41 to 51 nt and one invalid length-1 row. Current one-shot scoring
 pads promoter sequences to 84 nt, matching the legacy e7/e30 model input.
 
+The June 2026 Lib1 scratch branch is different from the earlier one-shot
+padding branch. The active learn-ready table is
+`src/learn/derived_data/promoter/bashor_in_house/lib1_promoter_allvalid_fastqs1_5__learn_ready.tsv`;
+it keeps the valid 41-51 nt tail and the scratch configs pad to
+`padded_seq_len=51` with neutral `N`. Treat this as the current `allvalid`
+scratch branch. If the scientific question requires exact 50 nt only, create a
+separate modal50 table and compare it deliberately.
+
 ## Split Policy
 
 Other Phase 1 CRE work uses two main split conventions:
@@ -109,11 +117,13 @@ barcode-quality column. Split original variants first, stratified by
 `complexity` and expression quantile bins, then apply train-only RC
 augmentation. Do not split after adding stored RC rows.
 
-For new Lib1 promoter, use a barcode-aware split. The primary recommendation is
-80/10/10 over all usable rows, with validation and test drawn from rows with
-`number_of_barcodes >= 4`. This gives enough heldout rows without consuming
-nearly all HQ8 examples. Report secondary evaluation slices for `>= 8` and
-`>= 16` barcodes.
+For new Lib1 promoter, use a barcode-aware split. The current June scratch HPO
+uses `train_min_barcodes=1`, `test_min_barcodes=8`, `split_seed=101`, and 250
+validation plus 250 test rows drawn from the HQ8 pool. Earlier notes considered
+an 80/10/10 split with `number_of_barcodes >= 4` heldout rows; keep that as a
+possible alternate split only if a follow-up notebook needs a larger heldout
+pool. Always report barcode-quality slices so model selection is not confused
+with measurement quality.
 
 If we decide that Lib1 heldout must be HQ8-only, use a smaller total holdout and
 record that the split is no longer comparable to the 80/10/10 pretraining
@@ -173,16 +183,25 @@ unchanged.
 Recommended defaults:
 
 - input sequence: `Promoter`,
-- input length: 84 nt via right-padding with `N`,
+- input length: 51 nt via right-padding with neutral `N` for the current
+  `allvalid` branch, or an explicitly named modal50 branch if short/long valid
+  rows are excluded,
 - target: `log2(RNA/DNA)`,
 - train target standardization: fit on train only,
-- primary heldout quality: `number_of_barcodes >= 4`,
-- primary split: 80/10/10 total, val/test drawn from the barcode-qualified pool,
+- primary heldout quality: current June scratch uses `number_of_barcodes >= 8`
+  for validation/test,
+- primary split: current June scratch uses 250 validation and 250 test rows from
+  the HQ8 pool, with all valid remaining rows eligible for training,
 - secondary reporting: all rows, `>= 4`, `>= 8`, and `>= 16` barcode slices.
 
 Run scratch baselines with the same architectures that survived legacy
 pretraining. Keep reverse-complement augmentation as an explicit ablation rather
 than a default assumption.
+
+As of 2026-06-09, first-pass Lib1 scratch HPO exists for
+`ResNet1DRegressor` and `PromoterBassetVL`. The validation-first scratch leader
+is PromoterBassetVL run `8fa94khq` with val Pearson 0.407 and test Pearson
+0.338. This is a candidate analysis input, not yet a promoted promoter encoder.
 
 ## Phase 3: Legacy-To-Lib1 Fine-Tuning
 
@@ -223,8 +242,10 @@ rather than pretending the legacy pretraining solved the Lib1 promoter task.
 - [ ] Add promoter configs/launchers for split-safe legacy pretraining.
 - [ ] Run legacy pretraining smoke tests with and without RC augmentation.
 - [ ] Run focused HPO for the best legacy architecture family.
-- [ ] Build the Lib1 promoter scratch/fine-tune runner with barcode-aware
-      split manifests.
-- [ ] Run Lib1 scratch baselines.
+- [x] Build the Lib1 promoter scratch runner with barcode-aware split manifests
+      for the `allvalid`/51-padded branch.
+- [x] Run first-pass Lib1 scratch baselines for ResNet1D and PromoterBassetVL.
+- [ ] Analyze the June Lib1 scratch HPO and decide whether to add a modal50
+      branch.
 - [ ] Fine-tune the best legacy e7/e30 checkpoint on Lib1.
 - [ ] Write the promoter decision notebook and update the Phase 1 matrix.

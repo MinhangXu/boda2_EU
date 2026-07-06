@@ -29,7 +29,7 @@ import pandas as pd
 THIS_DIR = Path(__file__).resolve().parent
 FILTERED_SCRIPT_PATH = THIS_DIR / "lib1_enhancer_learning_curve_filtered_raw_ratio_split_options.py"
 DEFAULT_DATA_PATH = Path(
-    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/enhancers/"
+    "/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/enhancers/"
     "L1_final_fastqs1-5_sublibrary_enhancer_subset_0filtered_out.csv"
 )
 DEFAULT_MODEL_PATH = (

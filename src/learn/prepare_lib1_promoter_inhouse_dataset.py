@@ -17,6 +17,7 @@ DEFAULT_INPUT = (
     WORK_ROOT
     / "opt_EU_learn_n_design"
     / "MattLee_lib1"
+    / "single_part_variant_level"
     / "promoters"
     / "L1_final_fastqs1-5_sublibrary_Promoter_subset.csv"
 )
