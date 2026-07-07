@@ -7,6 +7,13 @@ single-part variant-level data products after confirming repeated same-
 construct/same-barcode rows are duplicate records. Multi-part regeneration is
 deferred until the pML299 normalization discussion is resolved.
 
+Execution update, 2026-07-06: single-part data-level steps 1-4 were completed
+with `src/data_prep/generate_lib1_single_part_dedup_data.py`. New
+`.dedup_exact` barcode-level, single-part variant-level, per-library
+barcode-level, manifest, validation, and pre-dedup archive-copy artifacts now
+exist under the MattLee Lib1 data root. Original CSV paths were left in place
+pending the repo code/default update.
+
 Primary data root:
 
 ```text
@@ -343,6 +350,59 @@ Reason: preserving old paths while converting files to `.gz` can break code
 that expects `.csv`. If path preservation matters for notebooks, keep a small
 readme or symlink strategy instead of silently changing file formats in place.
 
+### Completed Data-Level Artifacts, 2026-07-06
+
+Regeneration script:
+
+```text
+boda2_EU/src/data_prep/generate_lib1_single_part_dedup_data.py
+```
+
+Run command:
+
+```text
+python src/data_prep/generate_lib1_single_part_dedup_data.py --archive-old
+```
+
+Barcode-level result:
+
+```text
+rows before exact dedup: 927311
+rows after exact dedup:  549160
+exact duplicate rows removed: 378151
+```
+
+The audit found 2 same `parts_concatenated + bba1_ddc1_concat` groups with
+non-identical barcode split/score fields. They were zero-count rows and were
+not collapsed by exact-row deduplication. Details are recorded in:
+
+```text
+opt_EU_learn_n_design/MattLee_lib1/barcode_level/
+  L1_variant_bc_expr_combined_20251107_np_fastq1-5.dedup_exact.variable_key_audit.csv
+```
+
+Validation summary:
+
+```text
+opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/
+  dedup_exact.validation_summary.json
+```
+
+All five canonical single-part row sets matched the original variant files,
+`number_of_barcodes` matched exactly, deduped DNA/RNA sums never increased,
+and `RNA/DNA` exactly matched the recomputed deduped aggregate ratio.
+
+Archive policy used:
+
+```text
+opt_EU_learn_n_design/MattLee_lib1/archive_pre_dedup_20260706/
+```
+
+The archive contains gzip copies of the old barcode, canonical single-part
+variant files, and unfiltered enhancer superset. Original CSV paths were left
+in place so current notebooks and scripts continue to work until the repo code
+defaults are updated to the `.dedup_exact` products.
+
 ## Repo Code Updates After Data Products Exist
 
 Required updates in `boda2_EU`:
@@ -540,17 +600,17 @@ Critical risks:
 
 - [ ] Bring pML299 / biological normalization topic to weekly meeting for
       multi-part planning. This is not a blocker for single-part dedup.
-- [ ] Write a reproducible data-prep script for exact barcode dedup and variant
+- [x] Write a reproducible data-prep script for exact barcode dedup and variant
       reconstruction.
-- [ ] Generate deduped barcode-level CSV and manifest.
-- [ ] Generate deduped single-part variant-level CSVs in the flat
+- [x] Generate deduped barcode-level CSV and manifest.
+- [x] Generate deduped single-part variant-level CSVs in the flat
       `single_part_variant_level/` root.
-- [ ] Generate deduped single-part per-library barcode-level modeling CSVs.
-- [ ] Validate reconstruction against old raw-row policy and new exact-dedup
+- [x] Generate deduped single-part per-library barcode-level modeling CSVs.
+- [x] Validate reconstruction against old raw-row policy and new exact-dedup
       policy.
-- [ ] Archive/compress old duplicate-containing barcode and single-part data
+- [x] Archive/compress old duplicate-containing barcode and single-part data
       only after validation.
-- [ ] Archive the unfiltered enhancer superset as audit/provenance, keeping
+- [x] Archive the unfiltered enhancer superset as audit/provenance, keeping
       `enhancer_subset_0filtered_out` as the canonical enhancer modeling table.
 - [ ] Update repo defaults and tutorials to use deduped data.
 - [ ] Regenerate learn-ready TSVs and metadata JSONs from deduped variant data.
