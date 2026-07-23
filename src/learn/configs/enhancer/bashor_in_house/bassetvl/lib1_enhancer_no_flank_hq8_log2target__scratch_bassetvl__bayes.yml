@@ -1,0 +1,185 @@
+program: train_wandb_log.py
+entity: minhangxu1998-baylor-college-of-medicine
+project: enhancer__bashor_in_house__no_flank_hq8_log2target__scratch__bassetvl_fp32
+method: bayes
+metric:
+  name: val_pearson
+  goal: maximize
+parameters:
+  epoch_eval_splits:
+    value: [train, val, test]
+  model_seed:
+    values: [1701, 1702]
+
+  data_module:
+    value: Lib1EnhancerDataModule
+  datafile_path:
+    value: derived_data/enhancer/bashor_in_house/lib1_fastqs1_5_0filtered_out__learn_ready_log2_target.tsv
+  sep:
+    value: tab
+  sequence_column:
+    value: Enhancers
+  target_column:
+    value: log2_RNA_DNA
+  barcode_column:
+    value: n_barcodes
+  padded_seq_len:
+    value: 216
+  padding_mode:
+    value: neutral
+  neutral_pad_char:
+    value: N
+  normalize:
+    value: true
+  test_min_barcodes:
+    value: 8
+  train_min_barcodes:
+    value: 1
+  val_frac_within_hq:
+    value: 0.2
+  test_frac_within_hq:
+    value: 0.2
+  val_size_within_hq:
+    value: 250
+  test_size_within_hq:
+    value: 250
+  train_size_frac:
+    value: 1.0
+  train_sampling_mode:
+    value: random
+  split_seed:
+    values: [101, 202, 303]
+  use_reverse_complements:
+    distribution: categorical
+    values: [false, true]
+  barcode_weighting:
+    value: false
+
+  graph_module:
+    value: CNNBasicTraining
+  model_module:
+    value: BassetVL
+  input_len:
+    value: 216
+  n_outputs:
+    value: 1
+  output_names:
+    value: [log2_RNA_DNA]
+  log_per_output_metric_details:
+    value: false
+  log_legacy_metric_aliases:
+    value: false
+
+  conv1_channels:
+    distribution: int_uniform
+    min: 120
+    max: 420
+  conv1_kernel_size:
+    distribution: categorical
+    values: [11, 15, 19, 23]
+  conv2_channels:
+    distribution: int_uniform
+    min: 96
+    max: 320
+  conv2_kernel_size:
+    distribution: categorical
+    values: [7, 9, 11, 15]
+  conv3_channels:
+    distribution: int_uniform
+    min: 64
+    max: 256
+  conv3_kernel_size:
+    distribution: categorical
+    values: [5, 7, 9]
+  n_linear_layers:
+    distribution: categorical
+    values: [1, 2]
+  linear_channels:
+    distribution: int_uniform
+    min: 128
+    max: 1024
+  linear_activation:
+    distribution: categorical
+    values: [ReLU, LeakyReLU, ELU]
+  linear_dropout_p:
+    distribution: uniform
+    min: 0.15
+    max: 0.6
+  use_batch_norm:
+    distribution: categorical
+    values: [true, false]
+  use_weight_norm:
+    value: false
+  loss_criterion:
+    value: MSELoss
+  reduction:
+    value: mean
+
+  optimizer:
+    distribution: categorical
+    values: [Adam, AdamW]
+  lr:
+    distribution: log_uniform_values
+    min: 0.00003
+    max: 0.003
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.003
+  amsgrad:
+    distribution: categorical
+    values: [true, false]
+  beta1:
+    distribution: uniform
+    min: 0.84
+    max: 0.96
+  beta2:
+    distribution: uniform
+    min: 0.985
+    max: 0.999
+  scheduler:
+    distribution: categorical
+    values: [CosineAnnealingWarmRestarts, "None"]
+  T_0:
+    distribution: categorical
+    values: [500, 1000, 2000]
+  T_mult:
+    value: 1
+  eta_min:
+    value: 0.0
+  scheduler_interval:
+    value: step
+
+  batch_size:
+    distribution: categorical
+    values: [32, 64, 128]
+  num_workers:
+    value: 8
+  max_epochs:
+    value: 180
+  min_epochs:
+    value: 20
+  stopping_patience:
+    value: 35
+  stopping_mode:
+    value: max
+  checkpoint_monitor:
+    value: val_pearson
+  accelerator:
+    value: gpu
+  devices:
+    value: 1
+  precision:
+    value: 32
+  logger_type:
+    value: wandb
+  logger_project:
+    value: enhancer__bashor_in_house__no_flank_hq8_log2target__scratch__bassetvl_fp32
+  run_name:
+    value: lib1_enhancer_no_flank_hq8_log2target_bassetvl_scratch_{runid}
+  artifact_path:
+    value: local_artifacts/enhancer/bashor_in_house/no_flank_hq8_log2_target/bassetvl/scratch_fp32_bayes
+  best_checkpoint_dir:
+    value: outputs/hpo_runs/by_project/enhancer__bashor_in_house__no_flank_hq8_log2target__scratch__bassetvl_fp32/best_checkpoint_model
+  default_root_dir:
+    value: outputs/enhancer/bashor_in_house/no_flank_hq8_log2_target/bassetvl/scratch_fp32_bayes

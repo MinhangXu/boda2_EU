@@ -1,5 +1,6 @@
 import argparse
 import ast
+import hashlib
 import math
 import os
 import sys
@@ -652,6 +653,253 @@ class CNNBasicTraining(LightningModule):
             on_epoch=on_epoch,
         )
         return None
+
+class CNNBassetBranchedScopedTransfer(CNNBasicTraining):
+    """Single-head Malinois transfer with scope-aware differential learning rates.
+
+    This adapter reproduces the bounded Lib1 Enhancer transfer policy without
+    exposing an audit loader.  It selects one pretrained output head, uses a
+    two-epoch branch/output warm-up for deeper scopes, and then opens exactly
+    the requested final scope.  The optimizer includes the final-scope
+    parameters from construction time; at the warm-up boundary its AdamW state
+    is cleared to match the historical runner's optimizer recreation.
+    """
+
+    ADAPTER_VERSION = "malinois_single_head_scoped_v1"
+    SOURCE_HEADS = ("K562", "HepG2", "SKNSH")
+    SCOPES = ("branched_only", "conv3_plus", "full")
+
+    @staticmethod
+    def add_graph_specific_args(parent_parser):
+        parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
+        group = parser.add_argument_group('Graph Module args')
+        group.add_argument('--parent_artifact', type=str, required=True)
+        group.add_argument('--head_lr', type=float, default=5e-4)
+        group.add_argument('--backbone_lr', type=float, default=1e-4)
+        group.add_argument('--transfer_weight_decay', type=float, default=1e-4)
+        group.add_argument('--frozen_epochs', type=int, default=2)
+        group.add_argument('--transfer_adapter_version', type=str, default=CNNBassetBranchedScopedTransfer.ADAPTER_VERSION)
+        group.add_argument('--output_names', type=str, nargs='+', default=None)
+        group.add_argument('--log_per_output_metric_details', type=utils.str2bool, default=False)
+        group.add_argument('--log_legacy_metric_aliases', type=utils.str2bool, default=False)
+        return parser
+
+    @staticmethod
+    def add_conditional_args(parser, known_args):
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        graph_args = grouped_args['Graph Module args']
+        main_args = grouped_args['Main args']
+        graph_args.source_head = getattr(main_args, 'source_head', '')
+        graph_args.unfreeze_scope = getattr(main_args, 'unfreeze_scope', '')
+        graph_args.pretrained_artifact_sha256 = getattr(
+            main_args, 'pretrained_artifact_sha256', ''
+        )
+        graph_args.output_names = _coerce_optional_list(graph_args.output_names)
+        return graph_args
+
+    def __init__(
+        self,
+        model,
+        parent_artifact,
+        source_head,
+        unfreeze_scope,
+        pretrained_artifact_sha256='',
+        head_lr=5e-4,
+        backbone_lr=1e-4,
+        transfer_weight_decay=1e-4,
+        frozen_epochs=2,
+        transfer_adapter_version=ADAPTER_VERSION,
+        output_names=None,
+        log_per_output_metric_details=False,
+        log_legacy_metric_aliases=False,
+    ):
+        super().__init__(
+            model=model,
+            optimizer='AdamW',
+            scheduler=None,
+            optimizer_args=None,
+            scheduler_args=None,
+            output_names=output_names,
+            log_per_output_metric_details=log_per_output_metric_details,
+            log_legacy_metric_aliases=log_legacy_metric_aliases,
+        )
+        if transfer_adapter_version != self.ADAPTER_VERSION:
+            raise ValueError(
+                f"Unexpected transfer_adapter_version={transfer_adapter_version!r}; "
+                f"expected {self.ADAPTER_VERSION!r}"
+            )
+        if source_head not in self.SOURCE_HEADS:
+            raise ValueError(f"source_head must be one of {self.SOURCE_HEADS}; got {source_head!r}")
+        if unfreeze_scope not in self.SCOPES:
+            raise ValueError(
+                f"unfreeze_scope must be one of {self.SCOPES}; got {unfreeze_scope!r}"
+            )
+        if int(frozen_epochs) < 0:
+            raise ValueError("frozen_epochs must be nonnegative")
+
+        self.parent_artifact = str(parent_artifact)
+        self.pretrained_artifact_sha256 = str(pretrained_artifact_sha256 or '').lower()
+        self.source_head = source_head
+        self.source_head_index = self.SOURCE_HEADS.index(source_head)
+        self.unfreeze_scope = unfreeze_scope
+        self.head_lr = float(head_lr)
+        self.backbone_lr = float(backbone_lr)
+        self.transfer_weight_decay = float(transfer_weight_decay)
+        self.frozen_epochs = int(frozen_epochs)
+        self.transfer_adapter_version = transfer_adapter_version
+        self._optimizer_reset_done = False
+
+        self._attach_selected_parent_head()
+        self._apply_epoch_scope(epoch=0)
+
+    @staticmethod
+    def _sha256_file(path):
+        digest = hashlib.sha256()
+        with open(path, 'rb') as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _scope_match(name, scope):
+        if scope == 'branched_only':
+            return name.startswith('branched.') or name.startswith('output.')
+        if scope == 'conv3_plus':
+            return (
+                name.startswith('conv3.')
+                or name.startswith('linear')
+                or name.startswith('branched.')
+                or name.startswith('output.')
+            )
+        if scope == 'full':
+            return True
+        raise ValueError(f"Unknown unfreeze scope: {scope}")
+
+    def _attach_selected_parent_head(self):
+        if not os.path.isfile(self.parent_artifact):
+            raise FileNotFoundError(self.parent_artifact)
+        observed_sha = self._sha256_file(self.parent_artifact)
+        if self.pretrained_artifact_sha256 and observed_sha != self.pretrained_artifact_sha256:
+            raise ValueError(
+                f"Pretrained artifact SHA256 mismatch: expected "
+                f"{self.pretrained_artifact_sha256}, observed {observed_sha}"
+            )
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            utils.unpack_artifact(self.parent_artifact, tmpdirname)
+            parent_model = utils.model_fn(os.path.join(tmpdirname, 'artifacts'))
+            parent_state = parent_model.state_dict()
+
+        selected_state = {}
+        n_heads = len(self.SOURCE_HEADS)
+        for key, value in parent_state.items():
+            if (
+                isinstance(value, torch.Tensor)
+                and (
+                    key.startswith('branched.branched_layer_')
+                    or key.startswith('output.')
+                )
+                and value.ndim >= 1
+                and value.shape[0] == n_heads
+            ):
+                selected_state[key] = value[
+                    self.source_head_index:self.source_head_index + 1
+                ].clone()
+            else:
+                selected_state[key] = value.clone() if isinstance(value, torch.Tensor) else value
+        self.model.load_state_dict(selected_state, strict=True)
+
+    def _apply_epoch_scope(self, epoch):
+        warmup = (
+            self.unfreeze_scope in {'conv3_plus', 'full'}
+            and int(epoch) < self.frozen_epochs
+        )
+        active_scope = 'branched_only' if warmup else self.unfreeze_scope
+        for name, parameter in self.model.named_parameters():
+            parameter.requires_grad = self._scope_match(name, active_scope)
+        self.active_unfreeze_scope = active_scope
+
+    def _trainable_module_counts(self):
+        prefixes = ('conv1', 'conv2', 'conv3', 'linear', 'branched', 'output')
+        counts = {prefix: 0 for prefix in prefixes}
+        counts['other'] = 0
+        for name, parameter in self.model.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            matched = False
+            for prefix in prefixes:
+                if name.startswith(prefix + '.') or (prefix == 'linear' and name.startswith('linear')):
+                    counts[prefix] += int(parameter.numel())
+                    matched = True
+                    break
+            if not matched:
+                counts['other'] += int(parameter.numel())
+        return counts
+
+    def configure_optimizers(self):
+        self.hpt = hypertune.HyperTune()
+        final_named = [
+            (name, parameter)
+            for name, parameter in self.model.named_parameters()
+            if self._scope_match(name, self.unfreeze_scope)
+        ]
+        head = [
+            parameter for name, parameter in final_named
+            if name.startswith('branched.') or name.startswith('output.')
+        ]
+        backbone = [
+            parameter for name, parameter in final_named
+            if not (name.startswith('branched.') or name.startswith('output.'))
+        ]
+        groups = []
+        if backbone:
+            groups.append(
+                {
+                    'params': backbone,
+                    'lr': self.backbone_lr,
+                    'weight_decay': self.transfer_weight_decay,
+                    'name': 'backbone',
+                }
+            )
+        if head:
+            groups.append(
+                {
+                    'params': head,
+                    'lr': self.head_lr,
+                    'weight_decay': self.transfer_weight_decay,
+                    'name': 'head',
+                }
+            )
+        if not groups:
+            raise RuntimeError("No parameters were selected for scoped transfer")
+        return torch.optim.AdamW(groups)
+
+    def on_train_epoch_start(self):
+        self._apply_epoch_scope(self.current_epoch)
+        if (
+            self.current_epoch == self.frozen_epochs
+            and self.frozen_epochs > 0
+            and self.unfreeze_scope in {'conv3_plus', 'full'}
+            and not self._optimizer_reset_done
+        ):
+            lightning_optimizer = self.optimizers()
+            optimizer = getattr(lightning_optimizer, 'optimizer', lightning_optimizer)
+            optimizer.state.clear()
+            self._optimizer_reset_done = True
+
+        counts = self._trainable_module_counts()
+        trainable = float(sum(counts.values()))
+        self.log('transfer_trainable_parameter_count', trainable, on_step=False, on_epoch=True)
+        for module_name, count in counts.items():
+            self.log(
+                f'transfer_trainable_{module_name}_parameters',
+                float(count),
+                on_step=False,
+                on_epoch=True,
+            )
+
 
 class CNNTransferLearning(CNNBasicTraining):
     """

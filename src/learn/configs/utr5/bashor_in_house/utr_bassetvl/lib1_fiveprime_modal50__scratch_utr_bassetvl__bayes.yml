@@ -14,7 +14,7 @@ parameters:
   data_module:
     value: Lib1FivePrimeDataModule
   datafile_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/utr5/bashor_in_house/lib1_fiveprime_modal50_fastqs1_5__learn_ready.tsv
+    value: derived_data/utr5/bashor_in_house/lib1_fiveprime_modal50_fastqs1_5_dedup_exact__learn_ready.tsv
   sep:
     value: tab
   sequence_column:
@@ -179,8 +179,8 @@ parameters:
   run_name:
     value: lib1_fiveprime_modal50_utr_bassetvl_scratch_{runid}
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/utr5/bashor_in_house/fiveprime_modal50/utr_bassetvl/scratch_fp32_bayes
+    value: local_artifacts/utr5/bashor_in_house/fiveprime_modal50/utr_bassetvl/scratch_fp32_bayes
   best_checkpoint_dir:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/hpo_runs/by_project/utr5__bashor_in_house__fiveprime_modal50__scratch__utr_bassetvl_fp32/best_checkpoint_model
+    value: outputs/hpo_runs/by_project/utr5__bashor_in_house__fiveprime_modal50__scratch__utr_bassetvl_fp32/best_checkpoint_model
   default_root_dir:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/utr5/bashor_in_house/fiveprime_modal50/utr_bassetvl/scratch_fp32_bayes
+    value: outputs/utr5/bashor_in_house/fiveprime_modal50/utr_bassetvl/scratch_fp32_bayes

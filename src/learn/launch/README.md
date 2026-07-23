@@ -28,6 +28,12 @@ All W&B sweep launchers support:
   `LAUNCH_NOTES` defaulting to `pilot` for smoke-testing the full
   train → test → `runs.csv` chain
 
+Lib1 launchers infer the repository and its parent workspace from the script
+location. When private data lives elsewhere, set `BODA_WORK_ROOT`; the
+Promoter/5'UTR scratch launchers also accept `BODA_LIB1_VARIANT_ROOT` or an
+exact `SOURCE_DATA` override. Paths inside their YAML configs are relative to
+`src/learn`, which is the working directory established by the launcher.
+
 By default, launchers do not force a W&B location; sweep placement comes from
 top-level `entity` and `project` in each YAML config (verbose scheme
 `<task_family>__<target_family>__<mode>__<model_family>`). Set
@@ -44,46 +50,46 @@ Launch metadata is propagated to every training process via
 Examples:
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU/src/learn
+cd "$(git rev-parse --show-toplevel)/src/learn"
 bash launch/utr3_hani_resnet1d_cell_conditioned_delta_aux_sweep.sh
 ```
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU/src/learn
+cd "$(git rev-parse --show-toplevel)/src/learn"
 NUM_AGENTS=4 NUM_RUNS=10 GPU_LIST="0 1 2 3" \
   bash launch/introns_seelig_a5ss_sd1_basset_branched_sweep.sh
 ```
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU/src/learn
+cd "$(git rev-parse --show-toplevel)/src/learn"
 CREATE_SWEEP_ONLY=1 bash launch/utr5_hani_basset_branched_delta_aux_sweep.sh
 ```
 
 Lib1 in-house scratch orchestration:
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 DRY_RUN=1 PREPARE_ONCE=0 GPU_LIST="0 1 2 3 4 5 6 7" RUNS_PER_SWEEP=128 \
   PARTS="promoter intron utr3 utr5 enhancer" MODE=parallel_by_part \
   bash src/learn/launch/lib1_inhouse_scratch_orchestrator.sh
 ```
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 GPU_LIST="0 1 2 3" RUNS_PER_SWEEP=128 MODE=sequential \
   PARTS="promoter intron utr3 utr5 enhancer" \
   bash src/learn/launch/lib1_inhouse_scratch_orchestrator.sh
 ```
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 GPU_LIST="0 1 2 3 4 5 6 7" RUNS_PER_SWEEP=128 MODE=parallel_by_part \
   PARTS="promoter intron utr3 utr5 enhancer" \
   bash src/learn/launch/lib1_inhouse_scratch_orchestrator.sh
 ```
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 DRY_RUN=1 PILOT=1 GPU_LIST="0" PARTS="enhancer" MODE=sequential \
   bash src/learn/launch/lib1_inhouse_scratch_orchestrator.sh
 ```
@@ -100,7 +106,7 @@ parallel architecture split.
 W&B history verification after a real pilot:
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 PILOT=1 GPU_LIST="0" PARTS="enhancer" MODE=sequential \
   bash src/learn/launch/lib1_inhouse_scratch_orchestrator.sh
 
@@ -117,10 +123,59 @@ cloud history. Standardized `logger_type: wandb` HPO runs define canonical
 canonical metrics through both Lightning and explicit `wandb.log`, and fail
 loudly instead of falling back to a non-W&B logger when W&B init fails.
 
+Lib1 July 2026 dedup Stage 3 weighted-loss campaign:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+conda run --no-capture-output -n boda_env \
+  python src/learn/verify_lib1_dedup_stage3_manifest.py
+
+# Read-only previews; these claim no GPU and execute no training command.
+conda run --no-capture-output -n boda_env \
+  python src/learn/run_lib1_dedup_stage3_campaign.py \
+  --pilot-row 1 --show-commands
+conda run --no-capture-output -n boda_env \
+  python src/learn/run_lib1_dedup_stage3_campaign.py \
+  --pilot-row 61 --show-commands
+```
+
+The exact pilots are ordered and independently acknowledged. Row 61 remains
+locked until row 1 completes and passes registry/prediction/provenance
+reconciliation:
+
+```bash
+conda run --no-capture-output -n boda_env \
+  python src/learn/run_lib1_dedup_stage3_campaign.py \
+  --execute --pilot-row 1 --confirm-pilot --gpus 0
+
+conda run --no-capture-output -n boda_env \
+  python src/learn/run_lib1_dedup_stage3_campaign.py \
+  --execute --pilot-row 61 --confirm-pilot --gpus 0
+```
+
+Do not start the non-pilot queue merely because the two pilots pass. A later,
+separately authorized launch requires `--execute --confirm-full-campaign`;
+the runner verifies both pilots again and records fresh GPU, storage, and W&B
+preflight evidence before claiming any row. It never enables audit/test
+evaluation.
+
+Stage 3 analysis readiness can be checked at any time without constructing a
+DataModule or audit loader:
+
+```bash
+conda run --no-capture-output -n boda_env \
+  python src/analysis/lib1_dedup_stage3_analysis.py --readiness-only
+```
+
+After all 900 analysis cells resolve, omit `--readiness-only` to produce the
+frozen paired-loss, paired-RC, Intron-stratum, and part-specific one-SE
+decision tables. The default full path exits nonzero and writes no selection
+while even one OOF arm is incomplete.
+
 Lib1 outer-seed prior-informed no-RC manifest pilot:
 
 ```bash
-cd /home/minhang/synBio_AL/boda2_EU
+cd "$(git rev-parse --show-toplevel)"
 python src/learn/generate_lib1_outer_seed_prior_hpo_manifest.py
 
 DRY_RUN=1 GPU_LIST="0" PARTS="promoter" MAX_CONFIGS_PER_PART=2 \
@@ -131,6 +186,76 @@ DRY_RUN=1 GPU_LIST="0" PARTS="promoter" MAX_CONFIGS_PER_PART=2 \
 This pilot selects one part, the first two base `config_id` values for that
 part, and two split seeds: 1 x 2 x 2 = 4 dry-run commands. Remove `DRY_RUN=1`
 only after checking the printed commands, W&B project names, and output paths.
+
+Lib1 July 2026 dedup Stage 1 exact replay:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate boda_env
+
+PREPARE_DATASET=1 DRY_RUN=1 PILOT=1 GPU_LIST="0" MAX_PARALLEL=1 \
+  bash src/learn/launch/lib1_dedup_phase1_exact_replay_orchestrator.sh
+```
+
+The dry run prints one representative from each of the six approved command
+families. Then run the plan's cloud-synced two-row training pilot (one part,
+two exact configs). Here, cloud-synced means `WANDB_MODE=online`; it does not
+mean online or continual model learning:
+
+```bash
+PREPARE_DATASET=0 PARTS="enhancer" MAX_ROWS=2 \
+  GPU_LIST="0" MAX_PARALLEL=1 \
+  bash src/learn/launch/lib1_dedup_phase1_exact_replay_orchestrator.sh
+```
+
+Verify both runs in the Enhancer exact-replay W&B project before starting the
+overnight queue. In particular, confirm train/validation histories and
+learning rate are present, no test metrics/model artifact were created, and
+validation predictions plus compact provenance were saved.
+
+```bash
+python src/learn/verify_lib1_dedup_stage1_pilot.py --manifest-rows 1 2
+```
+
+Start the full dedup-only queue in an attached screen session:
+
+```bash
+screen -S lib1_dedup_exact_replay
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate boda_env
+
+WANDB_ENTITY="minhangxu1998-baylor-college-of-medicine" \
+BODA_WANDB_ENTITY="minhangxu1998-baylor-college-of-medicine" \
+GPU_LIST="0 1 2 3" MAX_PARALLEL=4 PREPARE_DATASET=1 \
+  bash src/learn/launch/lib1_dedup_phase1_exact_replay_orchestrator.sh
+```
+
+Detach with `Ctrl-a d`; reattach with:
+
+```bash
+screen -r lib1_dedup_exact_replay
+```
+
+From another shell, monitor queue/storage state and recent failures with:
+
+```bash
+tail -f src/learn/outputs/hpo_runs/status/lib1_dedup_phase1_exact_replay_july2026/monitor.tsv
+find src/learn/outputs/hpo_runs/status/lib1_dedup_phase1_exact_replay_july2026/failures \
+  -type f -name '*.fail' -print
+```
+
+The wrapper validates the literal campaign entity inside every Python process,
+checks command/manifest agreement, launches no W&B sweep, binds resume markers
+to immutable row fingerprints, and stops at Stage 1. It also pauses the queue
+if the documented disk thresholds are crossed. Per-run training curves and
+best-checkpoint validation metadata live
+in the dedicated `*__dedup_exact_v1__*__exact_replay` W&B projects under the
+campaign group. The local W&B cache remains at the established
+`src/learn/wandb/` root. Local queue health is appended to
+`src/learn/outputs/hpo_runs/status/lib1_dedup_phase1_exact_replay_july2026/monitor.tsv`.
+Pre-dedup calibration mates are excluded by default; use
+`INCLUDE_CALIBRATION=1` only after reviewing their frozen selection table.
 
 If `SWEEP_ID` is already known, set it before launching agents. Use:
 
@@ -160,6 +285,9 @@ Sweep identity note:
 - `lib1_inhouse_outer_seed_prior_orchestrator.sh` — runs fixed manifest rows
   from the June 2026 Lib1 no-RC outer-split-seed prior-informed HPO design via
   a global one-worker-per-GPU queue.
+- `lib1_dedup_phase1_exact_replay_orchestrator.sh` — resolves and runs the
+  fixed July 2026 Stage 1 dedup replay manifest with frozen folds, explicit W&B
+  identity, compact predictions/provenance, and resumable status markers.
 - `lib1_intron_scratch_resnet1d_sweep.sh`
 - `lib1_promoter_scratch_promoter_bassetvl_sweep.sh`
 - `lib1_promoter_scratch_resnet1d_sweep.sh`

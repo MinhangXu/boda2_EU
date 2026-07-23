@@ -11,7 +11,7 @@ parameters:
   data_module:
     value: Lib1PromoterDataModule
   datafile_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/derived_data/promoter/bashor_in_house/lib1_promoter_allvalid_fastqs1_5__learn_ready.tsv
+    value: derived_data/promoter/bashor_in_house/lib1_promoter_allvalid_fastqs1_5_dedup_exact__learn_ready.tsv
   sep:
     value: tab
   sequence_column:
@@ -155,8 +155,8 @@ parameters:
   run_name:
     value: lib1_promoter_resnet1d_scratch_{runid}
   artifact_path:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/local_artifacts/promoter/bashor_in_house/lib1_allvalid/resnet1d/scratch_bayes
+    value: local_artifacts/promoter/bashor_in_house/lib1_allvalid/resnet1d/scratch_bayes
   best_checkpoint_dir:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/hpo_runs/by_project/promoter__bashor_in_house__lib1_allvalid__scratch__resnet1d/best_checkpoint_model
+    value: outputs/hpo_runs/by_project/promoter__bashor_in_house__lib1_allvalid__scratch__resnet1d/best_checkpoint_model
   default_root_dir:
-    value: /home/minhang/synBio_AL/boda2_EU/src/learn/outputs/promoter/bashor_in_house/lib1_allvalid/resnet1d/scratch_bayes
+    value: outputs/promoter/bashor_in_house/lib1_allvalid/resnet1d/scratch_bayes

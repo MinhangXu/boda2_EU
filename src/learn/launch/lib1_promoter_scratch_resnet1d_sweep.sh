@@ -3,11 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LEARN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${LEARN_DIR}/../.." && pwd)"
+WORK_ROOT="${BODA_WORK_ROOT:-$(dirname "${REPO_ROOT}")}"
+LIB1_VARIANT_ROOT="${BODA_LIB1_VARIANT_ROOT:-${WORK_ROOT}/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level}"
 source "${SCRIPT_DIR}/_wandb_helpers.sh"
 
 CONFIG_PATH="configs/promoter/bashor_in_house/resnet1d/lib1_promoter__scratch_resnet1d__bayes.yml"
 TASK_FAMILY="promoter"
-TARGET_FAMILY="bashor_in_house_lib1_promoter_allvalid_fastqs1_5"
+TARGET_FAMILY="bashor_in_house_lib1_promoter_allvalid_fastqs1_5_dedup_exact"
 COMPARISON_GROUP="promoter__bashor_in_house__lib1_allvalid__scratch_resnet1d"
 LAUNCH_SCRIPT="launch/lib1_promoter_scratch_resnet1d_sweep.sh"
 WANDB_SWEEP_ENTITY="${WANDB_SWEEP_ENTITY:-}"
@@ -21,8 +24,8 @@ VAL_SIZE_WITHIN_HQ="${VAL_SIZE_WITHIN_HQ:-250}"
 TEST_SIZE_WITHIN_HQ="${TEST_SIZE_WITHIN_HQ:-250}"
 DRY_RUN="${DRY_RUN:-0}"
 
-SOURCE_DATA="/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/single_part_variant_level/promoters/L1_final_fastqs1-5_sublibrary_Promoter_subset.csv"
-LEARN_READY_DATA="${LEARN_DIR}/derived_data/promoter/bashor_in_house/lib1_promoter_allvalid_fastqs1_5__learn_ready.tsv"
+SOURCE_DATA="${SOURCE_DATA:-${LIB1_VARIANT_ROOT}/L1_final_fastqs1-5_sublibrary_Promoter_subset.dedup_exact.csv}"
+LEARN_READY_DATA="${LEARN_DIR}/derived_data/promoter/bashor_in_house/lib1_promoter_allvalid_fastqs1_5_dedup_exact__learn_ready.tsv"
 
 if [[ "${PREPARE_DATASET}" == "1" ]]; then
   python "${LEARN_DIR}/prepare_lib1_promoter_inhouse_dataset.py" \
