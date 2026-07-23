@@ -1,0 +1,905 @@
+% First post-TAC report, 2026-07-20.
+% Compile from this directory so the relative figure paths resolve.
+% Finalized meeting illustrations are stored in the adjacent figures directory.
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{fancyhdr}
+
+\definecolor{navy}{HTML}{15324B}
+\definecolor{teal}{HTML}{167D78}
+\definecolor{orange}{HTML}{E76F51}
+\definecolor{pale}{HTML}{F2F6FA}
+\definecolor{muted}{HTML}{586B7D}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=navy,
+  citecolor=teal,
+  urlcolor=teal,
+  pdftitle={Lib1 single-part sequence-to-expression baselines: July 2026 TAC report},
+  pdfauthor={Minhang Xu}
+}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.16}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{July 2026 TAC report}
+\rhead{Lib1 mean-expression baseline}
+\cfoot{\thepage}
+
+\newcommand{\target}{\ensuremath{\log_2(\mathrm{total\ RNA}/\mathrm{total\ DNA})}}
+\newcommand{\oof}{out-of-fold}
+\newcommand{\cre}{cis-regulatory element}
+\newcommand{\creplural}{cis-regulatory elements}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% A compilation-safe figure macro. If the source is absent, the report retains
+% a visible pointer rather than silently dropping the figure.
+\newcommand{\assetfigure}[4]{%
+\begin{figure}[H]
+  \centering
+  \IfFileExists{#1}{%
+    \includegraphics[width=0.98\linewidth,height=0.78\textheight,keepaspectratio]{#1}%
+  }{%
+    \fcolorbox{navy}{pale}{%
+      \parbox[c][0.25\textheight][c]{0.90\linewidth}{%
+        \centering\textbf{Figure asset not found at compile time}\\[0.8em]
+        \small\texttt{\detokenize{#1}}%
+      }%
+    }%
+  }
+  \caption[#2]{\textbf{#2} #4}
+  \label{#3}
+\end{figure}
+}
+
+\newcommand{\statusbox}[1]{%
+  \begin{center}
+  \fcolorbox{teal}{pale}{\parbox{0.92\linewidth}{#1}}
+  \end{center}
+}
+
+\title{\textbf{Toward Objective-Driven Search of Combinatorial Gene-Regulatory Design Space}\\[0.35em]
+\large Learning the sequence-to-expression landscape from Library 1}
+\author{Minhang Xu}
+\date{Thesis Advisory Committee meeting, 20 July 2026\\
+Post-meeting report}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Mapping genotype to phenotype (the GP map) is a major effort in genomic
+science. The problem is difficult because the search space expands from four
+nucleotide choices at each position to combinations of entire regulatory
+parts. In collaboration with the Bashor Lab at Rice University, we take a
+synthetic-biology approach built around a defined DNA construct with five
+cis-regulatory element (CRE) variable regions: Enhancer, Promoter, 5'UTR,
+Intron, and 3'UTR. RNA and protein expression provide measurable phenotypes,
+and the CLASSIC experimental framework makes it possible to connect these
+phenotypes to large libraries of composed CRE circuits.
+
+This report focuses on the Library 1 (Lib1) single-part libraries, in which one
+CRE is varied at a time. The immediate objective is to establish a rigorous
+sequence-to-expression baseline for all five parts using one construct-level
+target, \target. The selected models show useful held-out predictive
+performance across all five parts, although the best model and training choices
+are part-specific. For Enhancer, models fit from random initialization were
+substantially weaker during development; transfer learning produced the best
+Enhancer model, although it still had the weakest final-test performance. Pooled Intron
+performance is partly assisted by separation among sequence-defined groups.
+The TAC discussion emphasized moving from individual parts to
+multi-part composition models, comparing RNA and protein phenotypes, adding
+simple k-mer and clustering baselines, and developing nucleotide- and
+motif-level interpretation. Together, these directions move the project from
+single-part prediction toward interpretable, model-guided design of regulatory
+constructs.
+\end{abstract}
+
+\statusbox{\textbf{Report structure.} The report follows the July TAC
+presentation from project scope and previous work through Lib1 preprocessing,
+model development, and results. The later sections summarize the committee
+discussion and next directions. Technical follow-ups developed after the
+meeting are labeled in the corresponding results sections.}
+
+\tableofcontents
+\clearpage
+
+\section{Project scope and thesis trajectory}
+
+Genotype-to-phenotype mapping asks how changes in DNA sequence produce changes
+in a measurable biological phenotype. Even before different regulatory parts
+are combined, the nucleotide-level search space is enormous: a sequence of
+length $L$ has $4^L$ possible designs. A genetic circuit adds a second layer of
+combinatorial growth because prior-knowledge-defined regions can vary both
+within themselves and in combination with one another.
+
+Our collaboration with the Bashor Lab approaches this problem using a defined
+synthetic DNA construct with five CRE variable regions---Enhancer, Promoter,
+5'UTR, Intron, and 3'UTR---and RNA and protein expression as experimental
+readouts. This scale of measurement is enabled by the CLASSIC experimental
+framework (combining long- and short-range sequencing to investigate genetic
+complexity), which links the full composition of multi-part constructs to
+quantitative expression measurements through long- and short-read sequencing
+\cite{rai2026ultra}.
+
+The long-term goal is to learn a composition-to-function map that can guide the
+search for constructs with a desired expression profile. This report begins
+with the first controlled layer of that problem: the Lib1 single-part
+libraries. Each sublibrary varies the sequence of one CRE while the other
+regulatory regions are held at control baseline sequences. The present models
+use mean RNA expression, \target, as their output.
+
+Starting with individual CREs follows how the library is built and gives us a
+reference for interpreting later multi-part behavior. The Lib1 baseline serves
+three immediate roles:
+
+\begin{enumerate}
+  \item quantify how well expression can be predicted from each individual
+        part using lightweight deep-learning models, with Pearson $r$ as the
+        primary development metric;
+  \item identify part-specific architecture and training choices before
+        combining the parts; and
+  \item estimate how performance changes with additional constructs and use
+        those results to guide future library design.
+\end{enumerate}
+
+\assetfigure{figures/project_scope_composition_to_function_search.png}
+{From individual CRE sequence models to composition-to-function search}
+{fig:project-scope}
+{A five-part regulatory construct creates both a nucleotide-level search space
+within each CRE and a composition-level search space across CREs. CLASSIC
+connects construct composition to measured expression.}
+
+\section{Recap from the previous TAC}
+
+The work leading into Lib1 had three parts. \textbf{First,} I used the published CLASSIC
+data to test inference with sequence foundation models. That exercise showed
+that a pretrained model such as Enformer can be applied to our construct
+context, but its roughly 250-million-parameter scale makes full fine-tuning an
+impractical starting point for the current data \cite{avsec2021enformer}.
+
+\textbf{Second,} I used public single-CRE datasets to build and compare smaller CNN and
+ResNet models. These models, ranging from roughly 300,000 to four million
+parameters, are a better match for the shorter synthetic sequences in this
+project. This work also established the CODA/BODA2-based software framework
+used for hyperparameter optimization, training, and evaluation.
+
+\textbf{Third,} the smaller Library 0 (Lib0) dataset made clear that a construct has not
+only a mean expression value but also a spread across barcode observations.
+Modeling that spread will require a probabilistic, count-based framework.
+Lib0, however, was too small to support the sequence-level models that are the
+focus of this report.
+
+Lib1 is the first experimental dataset in the collaboration to contain a large
+collection of single-part variants; it also contains multi-part sublibraries
+that are not the focus of this meeting. The single-part data let us establish
+the mean-expression baseline first, then compare it in future work with direct
+inference from foundation models or lightweight predictors trained on
+foundation-model embeddings, probabilistic observation models, and joint
+RNA/protein outcomes.
+
+\section{Library 1 data and construct-level target}
+
+\subsection{Five single-part libraries}
+
+Lib1 contains five single-part sublibraries. Within each sublibrary, one CRE
+sequence is varied while the other regulatory regions are held at control
+sequences. We train a separate model for each varied region, so each model
+is built around one variable CRE. The from-scratch models receive that CRE
+sequence directly, while the transferred Enhancer route places the variable
+Enhancer inside a fixed 600-nt assay frame.
+
+\begin{table}[H]
+\centering
+\caption{Lib1 single-part modeling sets.}
+\label{tab:lib1sets}
+\begin{tabularx}{\linewidth}{lXrr}
+\toprule
+Part & Sequence-length/input policy & All modeled constructs & $n_{\mathrm{barcode}}\geq8$ \\
+\midrule
+Enhancer & observed valid length 76--211 nt; neutral pad to 216 for
+from-scratch training; selected transfer-learning route uses a 600-nt
+assay-framed input & 4,787 & 1,229 \\
+Promoter & observed valid length 41--51 nt; neutral pad to 51 for
+from-scratch training & 7,893 & 1,931 \\
+5'UTR & modal/exact 50-nt input & 8,331 & 1,797 \\
+Intron & modal/exact 80-nt input & 7,848 & 1,326 \\
+3'UTR & modal/exact 100-nt input & 6,845 & 775 \\
+\bottomrule
+\end{tabularx}
+\vspace{0.4em}
+
+\begin{minipage}{0.98\linewidth}
+\footnotesize\textit{Note.} The observed input lengths differ from the rounded
+schematic values used in Figure~\ref{fig:project-scope}. For example, the
+modeled Enhancer sequences are not all exactly 200 nt, and observed Promoter
+sequences are 41--51 nt rather than a fixed schematic length.
+\end{minipage}
+\end{table}
+
+\subsection{From barcode observations to one target per construct}
+
+Each barcode row contains a construct identity, a distinct barcode identity,
+and paired DNA and RNA counts. Multiple barcode identities provide repeated
+measurement support for the same construct.
+
+For construct $i$ and barcode observation $j$, let $D_{ij}$ denote its DNA
+count and $R_{ij}$ its RNA count. We aggregate the barcode observations as
+
+\begin{equation}
+D_i=\sum_j D_{ij}, \qquad
+R_i=\sum_j R_{ij}, \qquad
+y_i=\log_2\left(\frac{R_i}{D_i}\right).
+\label{eq:target}
+\end{equation}
+
+where $D_i$ and $R_i$ are the aggregate DNA and RNA counts for construct $i$,
+and $y_i$ is its construct-level expression target. This is a log ratio of
+summed counts, not an arithmetic mean of per-barcode log ratios. No pseudocount
+is added in this baseline, since every modeled construct has positive aggregate
+DNA and RNA totals. During fitting, $y_i$ is z-scored using the current
+training rows only. Predictions are inverse-transformed before reporting on the
+raw \target\ scale.
+
+\assetfigure{figures/lib1_barcode_observations_to_construct_target.png}
+{From barcode observations to one expression target per construct}
+{fig:barcode-to-target}
+{Distinct barcode observations supporting the same construct are grouped by
+variable-part sequence. DNA and RNA counts are summed before calculating one
+\target\ response for that construct.}
+
+\subsection{Expression and barcode-support distributions}
+
+The raw expression distributions differ substantially across the five
+sublibraries (Figure~\ref{fig:expression-distributions}). In the Promoter,
+5'UTR, Intron, and 3'UTR sublibraries, the varied part is paired with a strong
+control Enhancer, which keeps most constructs at relatively high RNA/DNA
+expression. In the Enhancer sublibrary, that strong control is replaced by the
+varied Enhancer sequence itself. The much lower and broader distribution shows
+that varying the Enhancer has the most dramatic effect on RNA expression among
+the five single-part libraries.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_data_summary_july2026/reporting/lib1_dedup_expression_target_distributions.png}
+{Raw construct-expression distributions across five Lib1 single-part libraries}
+{fig:expression-distributions}
+{The panels show the raw construct-level target for all modeled constructs and
+the higher-support ($n_{\mathrm{barcode}}\geq 8$) subset. The shift for the Enhancer library reflects removal
+of the strong control Enhancer used in the other single-part libraries.}
+
+Barcode support is likewise heterogeneous. The fraction of constructs with at
+least eight distinct barcode identities is 25.7\% for Enhancer, 24.5\% for
+Promoter, 21.6\% for 5'UTR, 16.9\% for Intron, and 11.3\% for 3'UTR.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_data_summary_july2026/reporting/lib1_dedup_barcode_support_distributions.png}
+{Barcode-support distributions differ across the five Lib1 libraries}
+{fig:barcode-support}
+{The survival curves and composition bars describe distinct barcode identities
+per construct.}
+
+\section{Model development and evaluation workflow}
+
+\subsection{Training set and higher-support evaluation set}
+
+All constructs with at least one distinct barcode are eligible for model
+training. Development and the final test use constructs with at least eight
+barcodes. Earlier exact-bin and minimum-threshold
+experiments showed no consistent advantage to discarding low-support training
+constructs, while higher support provides a more stable population for model
+comparison. A threshold of eight also preserved enough high-support 3'UTR
+constructs for five development folds and a 250-construct final test.
+
+Let $\mathcal{D}_{\mathrm{dev}}$ denote the development constructs and let
+$f(i)$ be the fold containing construct $i$. For each fold, the model is trained
+on the other four folds and then predicts the constructs in the fold that was
+left out. Thus every development construct receives one prediction from a
+model that was not trained on that construct:
+
+\begin{equation}
+\widehat y_i^{\mathrm{OOF}}=M_{-f(i)}(x_i),
+\qquad
+r_{\mathrm{pooled\ OOF}}=
+\operatorname{PearsonCorr}_{i\in\mathcal{D}_{\mathrm{dev}}}
+\left(y_i,\widehat y_i^{\mathrm{OOF}}\right).
+\label{eq:oof-pearson}
+\end{equation}
+
+Here, $M_{-f(i)}$ is the model fit without fold $f(i)$, $x_i$ is the
+variable-part sequence, $y_i$ is the observed construct-level expression target
+from Equation~\ref{eq:target}, and $\widehat y_i^{\mathrm{OOF}}$ is the
+corresponding held-out model prediction. The primary development score is one
+Pearson correlation after the observed and held-out-predicted values from all
+five folds are combined; it is not the average of five fold-specific
+correlations.
+
+One high-support final-test partition per part was fixed before model
+development. After selection, the five part-specific model and training setups
+were each refit at seeds 1701, 1702, and 1703, producing 15 trained model
+checkpoints in total (five parts times three seeds). Here, a checkpoint is the
+saved fitted model state for one part-specific setup and seed. For each part,
+we averaged
+the predictions from its three seed-specific models and evaluated that ensemble
+once on the final test. We report those predictions without shifting or
+rescaling them after observing the final-test results.
+
+\subsection{Four stages of development}
+
+The presentation organized the work as four controlled questions rather than
+as an undifferentiated model search:
+
+\begin{enumerate}
+  \item Which architecture/optimization configurations are promising?
+  \item Does RC augmentation help the same configuration?
+  \item Does barcode-support weighting help the same arm?
+  \item How does predictive performance change with the number of training
+        constructs after model selection?
+\end{enumerate}
+
+\assetfigure{figures/lib1_single_part_modeling_workflow.png}
+{Four-stage development workflow for the Lib1 single-part baselines}
+{fig:modeling-workflow}
+{The workflow holds the target and evaluation design fixed while comparing
+model configurations, RC augmentation, barcode-weighted loss, and performance
+as training-set size changes. Under the implemented Stage-3 formula, the
+one-barcode weight is approximately 0.315; the 0.1 value shown in the current
+illustration is the clipping floor and is not reached by retained constructs.}
+
+\paragraph{Stage 1: broad configuration screen.}
+We compared 885 configurations under a common fold-0, seed-1701, RC-off,
+unweighted-MSE contract. The inventory comprised 128
+Enhancer ResNet1D, 158 PromoterBassetVL, 156 Intron ResNet1D, 157 3'UTR
+ResNet1D, 158 5'UTR ResNet1D, and 128 5'UTR UTRBassetVL configurations. Ten
+configurations per part were promoted for the paired five-fold comparisons.
+
+\paragraph{Stage 2: paired RC test.}
+Each promoted configuration was evaluated with RC off and on while keeping
+construct IDs, fold, seed, loss, and other training choices fixed. Validation
+always used the original orientation. The completed product contained 660
+development cells, 132 five-fold OOF arms, and 66 exact RC pairs. A limited
+Enhancer-transfer lane and a limited 3'UTR UTRBassetVL lane were included.
+
+\paragraph{Targeted 3'UTR follow-up.}
+Because Stage 2 showed a promising but unstable 3'UTR UTRBassetVL region, a
+fixed 24-configuration grid crossed learning rate, weight decay, and dropout
+over five folds and two RC modes (240 cells). The result identified a useful
+neighborhood around learning rate 0.002 and reinforced RC off for this part.
+This targeted grid is not shown in Figure~\ref{fig:modeling-workflow} so that
+the illustration can retain the common four-stage workflow.
+
+\paragraph{Stage 3: paired barcode-weighted loss.}
+For construct $i$ with $n_i$ distinct barcodes, let $z_i$ be the expression
+target standardized using the current training rows. The weighted arm used
+
+\begin{equation}
+w_i=\operatorname{clip}\left[
+\frac{\log(1+n_i)}{\log(9)},0.1,1\right], \qquad
+L=\frac{\sum_i w_i(\widehat z_i-z_i)^2}{\sum_i w_i}.
+\label{eq:weightedloss}
+\end{equation}
+
+The implemented weight is approximately 0.315 for a construct with one barcode
+and reaches 1.0 at eight or more barcodes. Thus the 0.1 clipping floor is not
+active for the retained constructs. Training contributions changed;
+development and final metrics remained unweighted. Each weighted model was
+compared with its exact unweighted mate. The final analysis contained 900 cells
+and 180 complete five-fold OOF arms.
+
+\paragraph{Stage 4: development-only downsampling.}
+Selected policies were held fixed while training size varied over
+$N=40,250,400,2500,4000,$ and full. Three frozen nested subset tracks were used
+at each finite $N$, with five outer OOF folds and a distinct inner checkpoint
+fold. All 660 cells completed. Final-test products were not read by Stage 4.
+
+\section{Model-development results}
+
+\subsection{Architecture and initialization route}
+
+The first-order result was not a universal winning scratch architecture.
+Enhancer required a distinct transfer route. With RC off on both sides, ten
+scratch ResNet1D configurations had a median pooled OOF $r=0.113$ and maximum
+$r=0.185$, whereas six transferred BassetBranched policies had median
+$r=0.513$ and maximum $r=0.535$. The selected transferred K562/full policy
+reached $r=0.565$ with RC on (Figure~\ref{fig:enhancer-transfer}).
+
+This compares the two tested modeling routes; it does not isolate the effect of
+pretraining because architecture, input framing, initialization, and source
+training history also differ.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_enhancer_transfer_vs_scratch_oof.png}
+{The tested transferred Enhancer route outperformed the tested scratch route}
+{fig:enhancer-transfer}
+{The route contrast is based on pooled five-fold OOF predictions. The smaller
+within-transfer RC effect is shown separately from the much larger difference
+between the from-scratch and transfer-learning routes.}
+
+\subsection{RC augmentation is route specific}
+
+Global RC augmentation consistently helped the transferred Enhancer family,
+with a median mean-fold gain of approximately 0.031 across its six paired
+policies. It was neutral or harmful on average for scratch Enhancer,
+PromoterBassetVL, both UTR routes, and most Intron configurations. Only one
+Intron configuration satisfied the stricter secondary checks. RC was
+therefore selected only for the transferred Enhancer policy
+(Figure~\ref{fig:rc-effect}).
+
+My working hypothesis is that this route-specific benefit is related to the
+training history of the transferred model. The BassetBranched checkpoint came
+from the BODA2/Malinois training recipe, which exposed the source model to
+reverse-complement sequences. Continuing that exposure during Lib1 fine-tuning
+may fit the representation learned during pretraining better than it fits a
+model initialized from scratch. This is a plausible explanation for the
+pattern in Figure~\ref{fig:rc-effect}, not yet a causal test of why RC helps in
+the specific Enhancer transfer-learning case.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_rc_augmentation_effect.png}
+{Reverse-complement augmentation helped the transferred Enhancer route, not every CRE part}
+{fig:rc-effect}
+{Every comparison changes RC augmentation while holding the base
+configuration, folds, seed, and loss fixed. The result supports a route-specific
+training policy rather than a universal sequence symmetry.}
+
+\paragraph{Follow-up to the RC result.}
+The original BODA2 recipe combines three distinct choices: showing every
+training sequence in both forward and reverse-complement orientation,
+presenting high-expression sequences additional times, and averaging forward-
+and reverse-strand predictions at inference \cite{gosai2024coda,boda2repo}.
+The completed Lib1 comparison tests only the first choice globally.
+
+A clearer follow-up begins without retraining: use the saved development
+models to compare forward-only prediction with the average of forward and RC
+predictions. A subsequent training comparison can give one arm an additional
+RC copy and a matched control arm an additional forward copy of the same rows.
+Both arms then see the same number of examples, so their difference more
+directly tests orientation rather than repeated exposure. If that comparison
+is informative, the same matched design can then test additional exposure for
+high-expression or high-barcode-support constructs.
+
+\subsection{Barcode-weighted loss gives modest, targeted gains}
+
+Barcode weighting was selected for Promoter, Intron, 3'UTR, and 5'UTR, but not
+Enhancer. The pooled OOF changes for the selected configuration in each part
+were $-0.009$, $+0.009$, $+0.016$, $+0.010$, and $+0.023$, respectively.
+Selection also required fold consistency and raw-error checks, so the
+decision should not be reduced to a single pooled Pearson delta
+(Figure~\ref{fig:weighted-effect}).
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_barcode_weighted_loss_effect.png}
+{Barcode-weighted loss produced small but repeatable gains in four selected configurations}
+{fig:weighted-effect}
+{Open points show held-out-fold changes and diamonds show the pooled OOF
+change. Evaluation remained unweighted; the intervention changed only the
+training loss.}
+
+\subsection{Broad HPO landscape}
+
+The configuration-level HPO landscape in Figure~\ref{fig:hpo-landscape} shows
+that architecture and optimization choices were sampled broadly and that
+several parts contain many similarly performing settings rather than one
+isolated winning configuration. Each point uses the Stage-1 screening score:
+validation Pearson $r$ on one predetermined split (fold 0, seed 1701), with RC
+off and unweighted MSE. That single-fold score was used only to rank
+configurations and promote candidates. The later decisions about RC
+augmentation and barcode-weighted loss instead used matched five-fold
+comparisons, testing each candidate against its paired RC-off/RC-on or
+unweighted/weighted alternative. Those decisions considered pooled OOF
+predictions together with consistency across folds and raw-error checks.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/supplement_hpo_configuration_landscape.png}
+{Broad hyperparameter screening across five Lib1 single-part models}
+{fig:hpo-landscape}
+{The 885 tested settings span convolutional architecture, prediction heads,
+regularization, optimizer, learning rate, weight decay, batch size, and
+scheduler choices. Diamonds denote configurations promoted to paired five-fold
+testing.}
+
+The per-epoch histories answer a different question. As shown in
+Figure~\ref{fig:training-dynamics}, the selected five-fold models generally
+reach broad development plateaus rather than a uniquely sharp best epoch. This
+current Lib1 figure is a more direct reference for training dynamics than the
+earlier historical plot.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/supplement_selected_policy_training_dynamics_all_parts.png}
+{Training dynamics of the selected five-fold policies}
+{fig:training-dynamics}
+{Training and held-out-fold trajectories are shown across epochs for the
+selected policy in each CRE part. The histories are development-only and are
+used to understand convergence and broad validation plateaus.}
+
+\section{Selected models and held-out final test}
+
+\begin{table}[H]
+\centering
+\caption{Development-selected policies and one-time final-test performance.}
+\label{tab:selected-policies}
+\small
+\begin{tabularx}{\linewidth}{lXccrrrr}
+\toprule
+Part & Selected route & RC & Loss & OOF $r$ & Test $r$ & Test COD $R^2$ & Slope \\
+\midrule
+Enhancer & BassetBranched, K562/full transfer & on & unweighted & 0.565 & 0.365 & 0.004 & 0.504 \\
+Promoter & PromoterBassetVL, scratch & off & weighted & 0.478 & 0.444 & 0.189 & 1.247 \\
+Intron & ResNet1D, scratch & off & weighted & 0.690 & 0.681 & 0.462 & 0.950 \\
+3'UTR & UTRBassetVL, scratch & off & weighted & 0.493 & 0.452 & 0.190 & 1.142 \\
+5'UTR & UTRBassetVL, scratch & off & weighted & 0.542 & 0.512 & 0.257 & 0.927 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Four parts retained broadly similar association between development and the
+one-time final test. Enhancer was the clear limitation: final-test Pearson fell
+to 0.365, COD $R^2$ was approximately zero, and the observed-on-prediction
+slope was 0.50. The model captures some rank ordering, but its raw predictions
+do not match the observed expression scale well. Promoter and 3'UTR also show
+departures from the identity line, whereas Intron and 5'UTR are closer
+(Figure~\ref{fig:final-test}).
+
+The plotted values are the predictions produced by the selected models. We did
+not shift or rescale them after seeing the final-test results, so the slopes
+describe the raw model outputs rather than a post-test-adjusted prediction.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_locked_final_test_scatter_hexbin.png}
+{Locked final test: observed versus predicted construct expression}
+{fig:final-test}
+{The top row shows one point per construct and the bottom row summarizes the
+same rows by hexagonal-bin counts. Dashed identity lines represent perfect raw-
+scale calibration; the common solid fit color represents observed expression
+regressed on prediction.}
+
+\section{Understanding the Intron sublibrary effect}
+
+The pooled Intron result is reproducibly strong, but it combines two sources of
+signal: ranking constructs within sequence-defined groups and separating group
+mean expression. Three nested IUPAC mask patterns define sequence-compatible
+groups with markedly different target means. Because the masks overlap, these
+assignments are sensitivity categories rather than verified synthesis-pool
+labels.
+
+On an illustrative Stage-1 held-out fold, the CNN achieved pooled
+$r=0.778$. A leakage-safe predictor using only three group means fitted on the
+training rows achieved $r=0.703$, while centering observations and predictions
+within groups reduced the CNN correlation to $r=0.472$. This does not mean that
+$0.778-0.472$ is an exact inflation estimate; the centered and pooled
+correlations have different denominators. It does show why pooled Pearson alone
+overstates uniform within-design-regime performance
+(Figure~\ref{fig:intron-triptych}).
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_intron_composition_triptych.png}
+{Intron pooled performance contains substantial sequence-group separation}
+{fig:intron-triptych}
+{This is an explanatory Stage-1 fold diagnostic, not the selected final-policy
+score. The middle panel uses group means fitted only on training rows. The
+groups are inferred from sequence masks and are not measured splicing states.}
+
+The result persists under the selected policy. Stage-2 OOF pooled Pearson was
+0.682 versus 0.451 after within-group centering, with group-specific
+correlations 0.599, 0.276, and 0.176. The locked final test produced pooled
+0.681, centered 0.473, and group-specific 0.579, 0.338, and 0.206. Thus real
+within-group signal remains, but the weakest residual group is not solved
+(Figure~\ref{fig:intron-group-audit}).
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_tac_presentation_july2026/figures/main_intron_sequence_group_audit.png}
+{Selected-policy Intron performance within sequence-defined groups}
+{fig:intron-group-audit}
+{The selected model is summarized with pooled, within-group-centered, and
+group-specific correlations for development OOF predictions and the held-out
+final test. The groups are inferred from sequence masks rather than verified
+experimental sublibrary labels.}
+
+The Stage-2 variance decomposition in
+Figure~\ref{fig:intron-group-audit} found that 70.6\% of target--prediction
+covariance lay between inferred group means. Equalizing group weights barely
+changed pooled Pearson because the group counts are already similar; it does
+not remove the covariance created by different group means. Increasing the
+barcode threshold also does not fix this composition problem.
+
+The appropriate current claim is therefore:
+
+\begin{quote}
+The Intron model predicts the observed natural-mixture library well and learns
+nonzero within-group sequence signal, but pooled performance is materially
+assisted by sequence-group separation and performance is heterogeneous across
+design regimes.
+\end{quote}
+
+\paragraph{Follow-up to the Intron result.}
+The presentation described three Intron sublibraries, but the current analysis
+can only infer three overlapping sequence groups from their design masks. The
+next analysis will report performance within each group, request verified
+synthesis-pool and design-family metadata from the Bashor Lab, and test a
+fold-safe residual target that removes training-set group means before fitting
+the sequence model. The pooled score remains useful for the observed mixture,
+but within-group prediction is the more informative improvement target.
+
+\section{In-silico downsampling: observed 10-fold and 100-fold gains}
+
+Stage 4 holds each selected model and training setup fixed while repeating
+development training with $N=40,250,400,2500,4000,$ and the full training set.
+This creates directly observed tenfold comparisons within the downsampling grid
+and one observed hundredfold comparison from 40 to 4,000 constructs. These
+contrasts estimate how performance changes over the sampled training-size
+range; they do not numerically forecast performance with ten or one hundred
+times more data than the current full library.
+
+\begin{table}[H]
+\centering
+\caption{Development-only Stage-4 gains across observed tenfold and hundredfold
+training-size increases. Intervals are paired-bootstrap 95\% intervals.}
+\label{tab:stage4}
+\small
+\begin{tabular}{lrr}
+\toprule
+Part/measure & $\Delta r$, 400 to 4,000 & $\Delta r$, 40 to 4,000 \\
+\midrule
+Enhancer & $+0.065\ [0.034,0.096]$ & $+0.128\ [0.076,0.183]$ \\
+Promoter & $+0.194\ [0.148,0.242]$ & $+0.312\ [0.236,0.384]$ \\
+Intron, pooled & $+0.078\ [0.043,0.117]$ & $+0.263\ [0.159,0.384]$ \\
+Intron, within-group centered & $+0.231\ [0.153,0.313]$ & $+0.263\ [0.176,0.353]$ \\
+3'UTR & $+0.242\ [0.070,0.389]$ & $+0.273\ [0.095,0.440]$ \\
+5'UTR & $+0.254\ [0.196,0.308]$ & $+0.397\ [0.340,0.454]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_stage4_downsampling_july2026/presentation/figures/01_primary_pearson_learning_curves.pdf}
+{Predictive performance changes with the number of training constructs}
+{fig:learning-curves}
+{Finite-size points average three fixed, nested subset tracks. Error bars
+preserve matched construct/subset comparisons through paired resampling. These
+are development-only learning curves.}
+
+Figure~\ref{fig:learning-curves} shows the full trajectories. The observed
+400-to-4,000 gain is largest for 5'UTR, 3'UTR, and Promoter, while Enhancer and
+pooled Intron change more modestly over the same decade. These statements
+describe marginal gains over the sampled range rather than a ranking of which
+CRE part should be prioritized experimentally.
+
+The pooled Intron curve hides continued improvement within the inferred groups:
+within-group-centered Intron performance increases by 0.231 from 400 to 4,000
+constructs even though pooled performance increases by only 0.078. The paired
+curves in Figure~\ref{fig:intron-learning-curves} make this distinction
+explicit.
+
+\assetfigure{../../../src/learn/outputs/analysis/lib1_dedup_stage4_downsampling_july2026/presentation/figures/03_intron_scoped_learning_curves.pdf}
+{Intron learning curves for pooled and within-group prediction}
+{fig:intron-learning-curves}
+{The pooled curve measures performance on the observed mixture, whereas the
+centered and group-specific curves track how much sequence variation is learned
+within the inferred design groups.}
+
+\section{Summary of Lib1 results presented at the TAC}
+
+The results presented at the meeting support five working conclusions.
+
+\begin{enumerate}
+  \item \textbf{We established a common mean-expression baseline for all five
+  individual CRE parts.} The data pipeline, target, development folds, and
+  held-out evaluation are now defined consistently across the five
+  sublibraries.
+  \item \textbf{The best modeling choices are part-specific.} The selected
+  Enhancer route uses a transferred BassetBranched model with RC augmentation.
+  Promoter uses PromoterBassetVL, Intron uses ResNet1D, and both UTR models use
+  UTRBassetVL; these four models are trained from scratch without RC.
+  \item \textbf{All barcode-support levels are useful for training.}
+  Higher-support constructs provide a more stable evaluation population, and
+  barcode-weighted loss gives modest gains for four parts, but removing
+  low-support constructs would discard useful sequence diversity.
+  \item \textbf{The selected models generalize across all five CRE parts, but
+  their limitations differ.} Enhancer has the weakest held-out performance.
+  Intron has the strongest pooled correlation, but a substantial part of that
+  score comes from separating sequence-defined groups.
+  \item \textbf{More variants should improve the next generation of models.}
+  The observed tenfold and hundredfold downsampling contrasts show continued
+  gains as the number of training constructs increases.
+\end{enumerate}
+
+These results establish the single-part reference needed for the next stage;
+they do not yet answer how the five CREs interact in a combined construct.
+They also do not yet model protein output, expression spread, new cell types,
+or an iterative design objective.
+
+\section{TAC discussion and next directions}
+
+\subsection{Move from individual CREs to multi-part composition}
+
+The central next step is to use the multi-part Lib1 sublibraries to learn how
+the five regulatory parts work together. The single-part models provide a
+reference for asking whether a combined construct behaves as the sum of its
+parts or contains higher-order interactions that require a joint model. We will
+begin with transparent additive and modular baselines, then compare them with
+models that learn directly from multiple part sequences. This is the first move
+from sequence-to-function prediction for individual CREs toward the
+composition-to-function search problem that motivates the thesis.
+
+\subsection{Compare RNA and protein phenotypes}
+
+RNA abundance is only one output of the synthetic construct. Because the Bashor
+Lab measures protein expression as well, an immediate biological question is
+whether different regulatory parts contribute differently to RNA and protein
+output. From textbook gene regulation, we expect Promoter sequence to act most
+directly on transcription, whereas the UTRs can strongly affect RNA stability
+and translation. Comparing RNA with protein therefore gives us a way to test
+whether the five parts contribute differently at transcriptional and
+post-transcriptional stages. These measurements may also support models that
+identify constructs with similar RNA but different protein expression, or
+other deliberately separated RNA--protein profiles. This is a more immediate
+design objective than cell-type-specific optimization, which will require
+matched data from additional cell types.
+
+\subsection{Add simple baselines and interpret sequence grammar}
+
+The committee requested comparisons with models that are easier to inspect than
+a CNN. We will add k-mer-based regression and sequence-clustering baselines
+using the same folds, target, and evaluation metrics as the deep-learning
+models. A motif-discovery analysis will be kept separate from the predictive
+baseline so that discovered sequence patterns can be related back to expression
+without overstating their causal role.
+
+The committee also asked whether the models can be interpreted at nucleotide
+and motif resolution. One potential plan is a staged adaptation of BODA2
+interpretation methods \cite{gosai2024coda}: first build a part-specific,
+single-output model adapter; then compare in-silico mutagenesis with Sampled
+Integrated Gradients on a small development subset; validate high-contribution
+regions through matched sequence perturbations; and only then scale to
+TF-MoDISco Lite and motif annotation
+\cite{sundararajan2017ig,shrikumar2018tfmodisco}. Intron interpretation will be
+stratified by sequence-defined group so that group identity and splice
+boundaries are not mistaken for fine-grained regulatory grammar.
+
+Evolutionary conservation and disease-associated variants were raised as
+possible downstream connections for interpretable sequence features. The
+current synthetic constructs are deliberately different from naturally evolved
+genomic loci: their part lengths and arrangement are engineered, and the
+current assay uses plasmids rather than constructs integrated into the genome.
+We therefore should not assume a direct conservation or disease interpretation.
+We can nevertheless compare each synthetic CRE part with analogous endogenous
+regulatory regions and publicly curated CRE profiles, examine whether the same
+nucleotide- or motif-level features are important, and synthesize matched
+variants inspired by known regulatory alleles to test their effects within the
+controlled Lib1 construct context.
+
+\subsection{Use foundation-model representations pragmatically}
+
+Full fine-tuning of a large sequence foundation model is not the immediate
+priority. A more feasible comparison is to extract frozen representations from
+models such as Evo 2 and train a lightweight predictor on top. This keeps the
+Lib1 task and evaluation splits unchanged while asking whether a pretrained
+sequence representation adds information beyond one-hot CNN inputs.
+
+\assetfigure{figures/evo2_embedding_prediction_plan.png}
+{Potential use of Evo 2 embeddings for Lib1 expression prediction}
+{fig:evo2-plan}
+{A frozen foundation model supplies candidate intermediate-layer
+representations, and a lightweight supervised head maps those representations
+to expression phenotypes. This is a conceptual plan: the exact construct
+length, token-position pooling, and RNA/protein target transformations remain
+to be finalized.}
+
+\subsection{Connect the project to regulatory-grammar literature and manuscript framing}
+
+The committee recommended a closer review of MPRA and regulatory-grammar work
+from Jay Shendure's group, together with Martin Kircher's work on experimental
+design and measurement variability. That literature will help position what is
+new about varying multiple regulatory elements in one synthetic construct.
+
+The meeting also raised manuscript strategy. The main biological story is the
+transition from individual CREs to multi-part regulatory grammar. In parallel,
+some computational components may support focused methods or bioinformatics
+papers. The relevant novelty is not that each machine-learning technique is
+new in isolation, but that the techniques are combined, tested, and adapted for
+this biological design space. We will make that distinction explicitly as the
+work develops.
+
+\subsection{Longer-term thesis trajectory}
+
+After the mean-expression and multi-part baselines are stable, a probabilistic
+observation model can return to the barcode-level RNA/DNA counts and model the
+spread of expression in addition to its mean. Additional cell-type data would
+then make cell-type-specific objectives possible. Ultimately, the models should
+enter an iterative design--build--test--learn cycle that proposes constructs
+with desired phenotypic profiles rather than serving only as retrospective
+predictors.
+
+For future meetings, the written TAC report will be circulated approximately
+one week in advance and will retain enough project background to orient newer
+committee members.
+
+\section*{Closing perspective}
+
+The July 2026 TAC marks a transition from establishing single-part baselines to
+using them as a reference for composition-level questions. We now have a common
+construct-level RNA target, part-specific model and training choices, and an
+in-silico estimate of how performance changes as more training constructs are
+added. The Enhancer and Intron results also identify concrete technical
+questions that should be resolved as the baseline develops.
+
+The central next phase is biological: combine individual CRE models, measure
+higher-order interactions, and compare how Promoter, UTR, Enhancer, and Intron
+variation contributes to RNA and protein phenotypes. Simple k-mer and
+clustering baselines, sequence-level interpretation, and foundation-model
+embeddings will help determine what the deep models add. Together, these steps
+move the project toward composition-to-function prediction and model-guided
+design of regulatory circuits.
+
+\begin{thebibliography}{99}
+
+\bibitem{rai2026ultra}
+Rai, K. et al.
+Ultra-high-throughput mapping of genetic design space.
+\textit{Nature} \textbf{650}, 1035--1044 (2026).
+\url{https://doi.org/10.1038/s41586-025-09933-9}.
+
+\bibitem{gosai2024coda}
+Gosai, S. J. et al.
+Machine-guided design of cell-type-targeting cis-regulatory elements.
+\textit{Nature} \textbf{634}, 1211--1220 (2024).
+\url{https://doi.org/10.1038/s41586-024-08070-z}.
+
+\bibitem{boda2repo}
+Gosai, S. J. et al.
+\textit{boda2: Computational Optimization of DNA Activity (CODA)}.
+\url{https://github.com/sjgosai/boda2}.
+
+\bibitem{avsec2021enformer}
+Avsec, Z. et al.
+Effective gene expression prediction from sequence by integrating long-range
+interactions.
+\textit{Nature Methods} \textbf{18}, 1196--1203 (2021).
+\url{https://doi.org/10.1038/s41592-021-01252-x}.
+
+\bibitem{kelley2016basset}
+Kelley, D. R., Snoek, J. and Rinn, J. L.
+Basset: learning the regulatory code of the accessible genome with deep
+convolutional neural networks.
+\textit{Genome Research} \textbf{26}, 990--999 (2016).
+\url{https://doi.org/10.1101/gr.200535.115}.
+
+\bibitem{sundararajan2017ig}
+Sundararajan, M., Taly, A. and Yan, Q.
+Axiomatic attribution for deep networks.
+In \textit{Proceedings of the 34th International Conference on Machine
+Learning} (2017).
+\url{https://proceedings.mlr.press/v70/sundararajan17a.html}.
+
+\bibitem{shrikumar2018tfmodisco}
+Shrikumar, A. et al.
+Technical note on transcription factor motif discovery from importance scores
+(TF-MoDISco).
+\textit{arXiv:1811.00416} (2018).
+\url{https://arxiv.org/abs/1811.00416}.
+
+\bibitem{bailey2021streme}
+Bailey, T. L.
+STREME: accurate and versatile sequence motif discovery.
+\textit{Bioinformatics} \textbf{37}, 2834--2840 (2021).
+\url{https://doi.org/10.1093/bioinformatics/btab203}.
+
+\bibitem{sinai2020adalead}
+Sinai, S. et al.
+AdaLead: a simple and robust adaptive greedy search algorithm for sequence
+design.
+\textit{arXiv:2010.02141} (2020).
+\url{https://arxiv.org/abs/2010.02141}.
+
+\end{thebibliography}
+
+\end{document}

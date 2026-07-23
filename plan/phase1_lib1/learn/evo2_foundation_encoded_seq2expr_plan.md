@@ -44,6 +44,15 @@ Output targets:
 
 ## High-level pipeline
 
+**Current concept illustration:**
+[`evo2_embedding_prediction_plan.png`](../tac_campaign_july2026/figures/evo2_embedding_prediction_plan.png)
+
+The illustration is conceptual. Before it becomes a finalized methods figure,
+update the 1,500-bp construct label to the intended approximately 7-kb
+Expression Unit, add the token-position reduction/pooling step, avoid assuming
+a four-token tokenizer description, and replace the provisional log10 target
+axes with the final RNA/protein target definitions.
+
 ```text
 Synthetic DNA construct
         |
