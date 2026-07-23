@@ -4,7 +4,7 @@
 
 **Current GitHub remote visibility:** public fork
 
-**Development target:** standalone private repository; migration deferred
+**Development target:** current public repository with code-only, data-excluded checkpoints
 
 **Policy status:** living repository policy
 **Adopted:** 2026-07-21
@@ -26,12 +26,12 @@ The default public commit contains:
 
 Everything else stays outside public Git unless it passes an explicit review.
 
-The July 2026 work may be committed locally on the current branch, but it must
-not be pushed to the current public `origin`. A future, separately reviewed
-migration will create or select a standalone private development repository,
-configure team and Codex access, and verify authenticated fetch/push before any
-of these commits are published remotely. The existing repository is a public
-fork, so changing its visibility is not treated as a routine branch operation.
+The July 2026 work may be committed and pushed on the current branch after the
+complete outgoing commit range is reviewed for unpublished data, exact split
+memberships, generated artifacts, secrets, and machine-specific paths. Private
+repository migration is optional and deferred; the current development
+boundary is enforced by artifact classification, narrow staging, ignore rules,
+and pre-push review.
 
 ## Classification And Default Location
 
@@ -166,15 +166,13 @@ For the current July 2026 checkpoint, continuing on
 `checkpoint/learn-finetune-docs-may2026` is the simplest option because the
 uncommitted July work directly continues that branch and there is no need to
 merge one checkpoint branch into another. Make small scoped commits there,
-review them locally, and leave the public remote untouched. After the private
-development repository and authentication are configured, push the branch
-there and eventually merge it into that repository's `main` through a pull
-request. A new branch is useful only when the work needs an independent review
-boundary, a risky experiment, or parallel development.
+review them locally, and push only after the full outgoing range passes the
+public-data safety review. A new branch is useful only when the work needs an
+independent review boundary, a risky experiment, or parallel development.
 
-## Deferred Private-Development Migration
+## Optional Future Private-Development Migration
 
-Before the first remote push of the July 2026 commits:
+If the project later adopts a private development repository:
 
 1. choose a standalone private repository, preferably owned by the project or
    laboratory organization so team roles can be managed centrally;
@@ -184,11 +182,11 @@ Before the first remote push of the July 2026 commits:
 4. configure and test authenticated fetch and push from this workstation;
 5. retain the existing public fork only as an upstream-code reference, unless
    a separately reviewed detachment is preferred; and
-6. review the complete outgoing commit range once more for private data,
+6. review the complete outgoing commit range for private data,
    generated artifacts, and machine-specific paths.
 
-This is intentionally a future administrative checkpoint, not part of the
-current local commit series.
+This remains an optional future administrative checkpoint. It is not required
+for reviewed code-only checkpoints that comply with this public Git policy.
 
 ## Pre-Commit Checklist
 
