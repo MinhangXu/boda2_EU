@@ -18,6 +18,29 @@ lightning_logs/
 # Compiled python modules.
 *.pyc
 
+# Tabular datasets and machine-generated result tables are local by default.
+# Existing tracked files are not retroactively untracked by these rules; see
+# plan/repo_hygiene/git_data_and_artifact_policy.md before migrating them.
+*.csv
+*.tsv
+*.jsonl
+*.xlsx
+*.xls
+*.arrow
+*.feather
+*.npy
+*.npz
+*.zarr/
+*.sqlite
+*.sqlite3
+
+# Small source-like fixtures/configuration that are intentionally versioned.
+!/analysis/AR001__rotation/dummy_train.tsv
+!/analysis/AR001__rotation/dummy_val.tsv
+!/analysis/AR001__rotation/dummy_test.tsv
+!/analysis/SG019__dsub_contrib_scores/my-tasks.tsv
+!/src/learn/run_registry/best_runs.csv
+
 # Data files, general
 *.tar.gz
 *.pt
@@ -34,6 +57,10 @@ lightning_logs/
 /src/learn/outputs/
 /src/learn/derived_data/
 /src/learn/local_artifacts/
+/src/learn/data_manifests/
+/src/learn/launch/generated/
+/src/learn/run_registry/wandb_history_exports/
+/src/learn/run_registry/*.lock
 # Legacy guard: project-shaped HPO roots should live under
 # /src/learn/outputs/hpo_runs/by_project/, not directly in src/learn/.
 /src/learn/*__*/
@@ -50,6 +77,21 @@ lightning_logs/
 /tutorials/lib1_tasks/**/*predictions.csv
 /tutorials/lib1_tasks/**/*prediction_rows.csv
 /tutorials/lib1_tasks/**/*per_epoch*.csv
+/tutorials/**/outputs/
+/tutorials/**/plots/
+/tutorials/**/presentation_plots/
+/tutorials/lib1_tasks/reusable_plots/
+/tutorials/utr_analysis_plots/
+/tutorials/**/*.html
+
+# New tutorial notebooks remain local unless they are deliberately reviewed,
+# stripped of outputs/execution state, and force-added. Existing tracked
+# notebooks are not affected by this rule.
+/tutorials/**/*.ipynb
+
+# Private TAC meeting record and generated local report preview.
+/plan/phase1_lib1/tac_campaign_july2026/context/granola_tac_meeting_2026-07-20.md
+/plan/phase1_lib1/tac_campaign_july2026/tac_report_july20_2026_draft.pdf
 
 # Data files, genomics
 *.fasta
