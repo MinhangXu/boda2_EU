@@ -14,16 +14,19 @@ barcode-level, manifest, validation, and pre-dedup archive-copy artifacts now
 exist under the MattLee Lib1 data root. Original CSV paths were left in place
 pending the repo code/default update.
 
+`$BODA_WORK_ROOT` denotes the workspace containing this checkout and the
+private data roots; set it explicitly when those directories are not siblings.
+
 Primary data root:
 
 ```text
-/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/
+$BODA_WORK_ROOT/opt_EU_learn_n_design/MattLee_lib1/
 ```
 
 Primary repo root:
 
 ```text
-/home/minhang/synBio_AL/boda2_EU/
+<path-to-boda2_EU>/
 ```
 
 ## Current Finding
@@ -436,7 +439,7 @@ Recommended version-control sequence:
 3. Generate external data products under:
 
 ```text
-/home/minhang/synBio_AL/opt_EU_learn_n_design/MattLee_lib1/
+$BODA_WORK_ROOT/opt_EU_learn_n_design/MattLee_lib1/
 ```
 
 4. Keep large CSV data outside Git unless the project explicitly decides to
@@ -540,6 +543,12 @@ Minimal paired experiment grid:
 ## Follow-Up 3: Barcode-Level Uncertainty HPO Design
 
 Priority: higher than broad reruns of all variant-level HPOs.
+
+Discussion handoff/context brief:
+
+```text
+boda2_EU/plan/phase1_lib1/learn/barcode_level_uncertainty_discussion_context_july7_2026.md
+```
 
 Goal: model barcode-level observations and uncertainty directly, rather than
 collapsing immediately to one construct-level target.

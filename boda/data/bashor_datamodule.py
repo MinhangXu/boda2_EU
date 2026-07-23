@@ -1593,3 +1593,101 @@ class Lib1IntronDataModule(BashorDataModule):
 
 class Lib1FivePrimeDataModule(BashorDataModule):
     pass
+
+
+class BashorMultiTargetDataModule(BashorDataModule):
+    @staticmethod
+    def add_data_specific_args(parent_parser):
+        parser = BashorDataModule.add_data_specific_args(parent_parser)
+        group = parser.add_argument_group('Multi-target data args')
+        group.add_argument(
+            '--target_columns',
+            type=str,
+            nargs='+',
+            default=None,
+            help='One or more regression target columns. Falls back to --target_column when omitted.',
+        )
+        return parser
+
+    @staticmethod
+    def process_args(grouped_args):
+        data_args = BashorDataModule.process_args(grouped_args)
+        multi_args = grouped_args.get('Multi-target data args')
+        target_columns = _coerce_string_list(getattr(multi_args, 'target_columns', None))
+        if not target_columns:
+            target_columns = [data_args.target_column]
+        data_args.target_columns = target_columns
+        return data_args
+
+    def __init__(self, *args, target_columns=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        target_columns = _coerce_string_list(target_columns)
+        if not target_columns:
+            target_columns = [self.target_column]
+        self.target_columns = target_columns
+        self.target_processed_columns = [
+            f'target_processed_{idx}' for idx, _ in enumerate(self.target_columns)
+        ]
+
+    def _prep_df(self):
+        df = pd.read_csv(self.datafile_path, sep=self.sep).copy()
+        required = [self.sequence_column, self.barcode_column, *self.target_columns]
+        missing = [column for column in required if column not in df.columns]
+        if missing:
+            raise ValueError(f'{self.datafile_path} is missing required columns: {missing}')
+
+        for column in self.target_columns:
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+        df[self.barcode_column] = pd.to_numeric(df[self.barcode_column], errors='coerce')
+
+        finite_targets = np.ones(len(df), dtype=bool)
+        for column in self.target_columns:
+            finite_targets = finite_targets & np.isfinite(df[column].to_numpy(dtype=float))
+        df = df.loc[
+            df[self.sequence_column].notna()
+            & df[self.barcode_column].notna()
+            & finite_targets
+        ].reset_index(drop=True)
+        df['row_id'] = np.arange(len(df))
+        df[self.pad_column_name] = df.apply(self.padding_fn, axis=1)
+        self._validate_padded_lengths(df)
+        return df
+
+    def _standardize_targets(self, df_train, df_val, df_test):
+        means = df_train[self.target_columns].mean(axis=0)
+        stds = df_train[self.target_columns].std(axis=0)
+        stds = stds.where(np.isfinite(stds) & (stds.abs() >= 1e-8), 1.0)
+        self.target_mean = {column: float(means[column]) for column in self.target_columns}
+        self.target_std = {column: float(stds[column]) for column in self.target_columns}
+
+        out = []
+        for frame in (df_train, df_val, df_test):
+            frame = frame.copy()
+            for idx, column in enumerate(self.target_columns):
+                processed_column = self.target_processed_columns[idx]
+                if self.normalize:
+                    frame[processed_column] = (frame[column] - means[column]) / stds[column]
+                else:
+                    frame[processed_column] = frame[column]
+            if self.barcode_weighting:
+                frame['sample_weight'] = frame[self.barcode_column].map(self._barcode_weight)
+            out.append(frame)
+        return out
+
+    def _df_to_dataset(self, df, training=False):
+        dna_list = [utils.row_dna2tensor(row, in_column_name=self.pad_column_name) for _, row in df.iterrows()]
+        dna_tensor = torch.stack(dna_list, dim=0)
+        y = torch.tensor(df[self.target_processed_columns].to_numpy(dtype=np.float32))
+        w = None
+        if 'sample_weight' in df.columns:
+            w = torch.tensor(df['sample_weight'].to_numpy(dtype=np.float32))
+        return DNARegressionDataset(
+            dna_tensor=dna_tensor,
+            target_tensor=y,
+            weight_tensor=w,
+            use_reverse_complements=(training and self.use_reverse_complements),
+        )
+
+
+class Lib1MeanSpreadDataModule(BashorMultiTargetDataModule):
+    pass
